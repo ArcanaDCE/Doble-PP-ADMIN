@@ -9,24 +9,14 @@ function normalizeAuthError(errorMessage: string) {
     return 'Correo o contraseña incorrectos.'
   }
 
-  if (errorMessage.includes('Email not confirmed')) {
-    return 'Tu correo todavía no ha sido confirmado en Supabase.'
-  }
-
-  if (errorMessage.includes('rate limit')) {
-    return 'Se alcanzó el límite temporal de intentos. Espera un momento y vuelve a intentar.'
-  }
-
   return errorMessage
 }
 
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { signIn } = useAuth()
+  const { configError, isConfigured, signIn } = useAuth()
   const quickAccessEmail = (import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com').trim().toLowerCase()
-  const quickAccessPassword = import.meta.env.VITE_APP_ADMIN_PASSWORD || 'DoblePP2025!'
-  const hasQuickAccess = Boolean(quickAccessEmail && quickAccessPassword)
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState(quickAccessEmail)
   const [password, setPassword] = useState('')
@@ -59,23 +49,6 @@ export function LoginPage() {
       return
     }
 
-    setIsSubmitting(false)
-    navigate(redirectTo, { replace: true })
-  }
-
-  async function handleQuickAccess() {
-    setErrorMessage(null)
-    setIsSubmitting(true)
-
-    const responseError = await signIn(quickAccessEmail, quickAccessPassword)
-
-    if (responseError) {
-      setErrorMessage(normalizeAuthError(responseError))
-      setIsSubmitting(false)
-      return
-    }
-
-    setPassword('')
     setIsSubmitting(false)
     navigate(redirectTo, { replace: true })
   }
@@ -129,10 +102,16 @@ export function LoginPage() {
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 text-sky-200" />
                 <p className="text-sm leading-7 text-sky-50/90">
-                  Acceso interno simplificado para dos usuarios autorizados. Esta pantalla valida la sesión local y redirige al dashboard después del login.
+                  Acceso interno simple y privado. Esta pantalla valida la sesión local y redirige al dashboard después del login.
                 </p>
               </div>
             </div>
+
+            {configError ? (
+              <div className="mt-4 rounded-[24px] border border-rose-400/20 bg-rose-400/10 p-4 text-sm leading-7 text-rose-100">
+                {configError}
+              </div>
+            ) : null}
 
             {errorMessage ? (
               <div className="mt-4 rounded-[24px] border border-rose-400/20 bg-rose-400/10 p-4 text-sm leading-7 text-rose-100">
@@ -150,7 +129,7 @@ export function LoginPage() {
                   className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-slate-500"
                   placeholder="admin@doblepp.com"
                   autoComplete="email"
-                  disabled={isSubmitting}
+                  disabled={!isConfigured || isSubmitting}
                 />
               </div>
 
@@ -164,7 +143,7 @@ export function LoginPage() {
                     className="h-12 w-full bg-transparent px-4 text-sm text-white outline-none placeholder:text-slate-500"
                     placeholder="••••••••"
                     autoComplete="current-password"
-                    disabled={isSubmitting}
+                    disabled={!isConfigured || isSubmitting}
                   />
                   <button
                     type="button"
@@ -177,28 +156,14 @@ export function LoginPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+              <Button type="submit" className="w-full" size="lg" disabled={!isConfigured || isSubmitting}>
                 <LockKeyhole className="h-4 w-4" />
                 {isSubmitting ? 'Validando acceso...' : 'Iniciar sesión'}
               </Button>
-
-              {hasQuickAccess ? (
-                <Button
-                  type="button"
-                  className="w-full"
-                  size="lg"
-                  variant="secondary"
-                  disabled={isSubmitting}
-                  onClick={() => void handleQuickAccess()}
-                >
-                  <ShieldCheck className="h-4 w-4" />
-                  Entrar con acceso rápido
-                </Button>
-              ) : null}
             </form>
 
             <div className="mt-5 rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-7 text-amber-50/90">
-              Acceso de producción simple para dos usuarios. Puedes usar las credenciales por defecto o cambiar el correo y la contraseña en las variables de entorno del proyecto.
+              Publicación simple: solo necesitas definir correo y contraseña del administrador en Netlify para que el sistema quede listo.
             </div>
 
             <div className="mt-6 text-sm text-slate-400">

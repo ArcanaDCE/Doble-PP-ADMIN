@@ -4,16 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npx vite",
-    "dev:host": "npx vite --host localhost --port 4173 --open /login",
-    "build": "npx tsc -b && npx vite build",
-    "lint": "npx oxlint",
-    "preview": "npx vite preview",
-    "preview:host": "npx vite preview --host localhost --port 4173 --open /login"
+    "dev": "vite",
+    "dev:host": "vite --host localhost --port 4173 --open /login",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint src vite.config.ts",
+    "preview": "vite preview",
+    "preview:host": "vite preview --host localhost --port 4173 --open /login"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
-    "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",

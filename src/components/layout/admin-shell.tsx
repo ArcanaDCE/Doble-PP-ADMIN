@@ -244,7 +244,7 @@ export function AdminShell() {
                   <div className="hidden text-left sm:block">
                     <p className="text-sm font-medium text-white">{user?.email ?? 'Usuario autenticado'}</p>
                     <p className="text-xs capitalize text-slate-400">
-                      {role === 'unknown' ? 'Rol por definir' : role}
+                      {role}
                     </p>
                   </div>
                 </div>

@@ -85,7 +85,7 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
           <div className="rounded-3xl border border-amber-400/20 bg-amber-400/10 p-4">
             <p className="text-sm font-semibold text-amber-100">{user?.email ?? 'Usuario autenticado'}</p>
             <p className="mt-1 text-xs capitalize leading-6 text-amber-50/80">
-              {role === 'unknown' ? 'Rol pendiente de configurar en Supabase' : role}
+              {role}
             </p>
           </div>
           <Button className="mt-4 w-full" variant="secondary" onClick={() => void handleSignOut()}>

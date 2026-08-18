@@ -1,13 +1,23 @@
-import type { PropsWithChildren } from 'react'
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
-import { supabase } from '../../lib/supabase/client.ts'
+import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
-type AppRole = 'administrator' | 'supervisor' | 'unknown'
+export type AppRole = 'administrator' | 'supervisor'
+
+export type AuthUser = {
+  id: string
+  email: string
+  role: AppRole
+  name: string
+}
+
+export type AuthSession = {
+  token: string
+  createdAt: string
+  user: AuthUser
+}
 
 type AuthContextValue = {
-  user: User | null
-  session: Session | null
+  user: AuthUser | null
+  session: AuthSession | null
   isLoading: boolean
   isConfigured: boolean
   configError: string | null
@@ -16,222 +26,113 @@ type AuthContextValue = {
   signOut: () => Promise<string | null>
 }
 
+const SESSION_STORAGE_KEY = 'doble-pp-auth-session'
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-function resolveRole(user: User | null): AppRole {
-  const role = user?.app_metadata.role ?? user?.user_metadata.role
+function getConfiguredCredentials() {
+  const email = (import.meta.env.VITE_APP_ADMIN_EMAIL || '').trim().toLowerCase()
+  const password = import.meta.env.VITE_APP_ADMIN_PASSWORD || ''
+  const name = (import.meta.env.VITE_APP_ADMIN_NAME || 'Administrador principal').trim()
 
-  if (role === 'administrator' || role === 'supervisor') {
-    return role
+  return { email, password, name }
+}
+
+function createSession(email: string, name: string): AuthSession {
+  return {
+    token: `local_${Math.random().toString(36).slice(2, 12)}`,
+    createdAt: new Date().toISOString(),
+    user: {
+      id: 'local-admin',
+      email: email.trim().toLowerCase(),
+      role: 'administrator',
+      name,
+    },
+  }
+}
+
+function readStoredSession() {
+  if (typeof window === 'undefined') {
+    return null
   }
 
-  return 'unknown'
-}
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
 
-function createFallbackUser(email: string): User {
-  return {
-    id: 'local-admin',
-    email,
-    app_metadata: { provider: 'local', role: 'administrator' },
-    user_metadata: { role: 'administrator' },
-    aud: 'authenticated',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_sign_in_at: new Date().toISOString(),
-    phone: '',
-    confirmation_sent_at: null,
-    email_confirmed_at: new Date().toISOString(),
-    factors: [],
-    role: 'administrator',
-    is_anonymous: false,
-    identities: [],
-  } as unknown as User
-}
+    const parsed = JSON.parse(raw) as AuthSession
+    if (!parsed?.user?.email || !parsed?.token) {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY)
+      return null
+    }
 
-function createFallbackSession(email: string) {
-  const user = createFallbackUser(email)
-  return {
-    access_token: 'local-fallback-token',
-    refresh_token: 'local-fallback-refresh',
-    expires_in: 3600,
-    expires_at: Math.floor(Date.now() / 1000) + 3600,
-    token_type: 'bearer',
-    user,
-  } as unknown as Session
-}
-
-function getFallbackCredentials() {
-  const fallbackEmail = (import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com').trim().toLowerCase()
-  const fallbackPassword = import.meta.env.VITE_APP_ADMIN_PASSWORD || 'DoblePP2025!'
-  return { fallbackEmail, fallbackPassword }
-}
-
-function isFallbackCredentials(email: string, password: string) {
-  const { fallbackEmail, fallbackPassword } = getFallbackCredentials()
-  return email.trim().toLowerCase() === fallbackEmail && password === fallbackPassword
-}
-
-function applyFallbackLogin(email: string) {
-  const normalized = email.trim().toLowerCase()
-  const fallbackPassword = getFallbackCredentials().fallbackPassword
-  localStorage.setItem('doblepp-auth-email', normalized)
-  localStorage.setItem('doblepp-auth-password', fallbackPassword)
-  return {
-    user: createFallbackUser(normalized),
-    session: createFallbackSession(normalized),
+    return parsed
+  } catch {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    return null
   }
+}
+
+function persistSession(session: AuthSession | null) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (!session) {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const configError = null
 
   useEffect(() => {
-    const storedEmail = localStorage.getItem('doblepp-auth-email')
-    const storedPassword = localStorage.getItem('doblepp-auth-password')
-    const { fallbackEmail, fallbackPassword } = getFallbackCredentials()
-    const hasStoredFallbackSession = Boolean(
-      storedEmail && storedPassword && isFallbackCredentials(storedEmail, storedPassword),
-    )
-
-    if (storedEmail && storedPassword) {
-      setUser(createFallbackUser(storedEmail))
-      setSession(createFallbackSession(storedEmail))
-    } else if (fallbackEmail && fallbackPassword) {
-      localStorage.setItem('doblepp-auth-email', fallbackEmail)
-      localStorage.setItem('doblepp-auth-password', fallbackPassword)
-      const fallbackSession = createFallbackSession(fallbackEmail)
-      setUser(fallbackSession.user)
-      setSession(fallbackSession)
-    }
-
-    if (!supabase) {
-      setIsLoading(false)
-      return
-    }
-
-    let isMounted = true
-
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!isMounted) {
-        return
-      }
-
-      if (error) {
-        setSession(null)
-        if (hasStoredFallbackSession && storedEmail) {
-          const fallbackSession = createFallbackSession(storedEmail)
-          setUser(fallbackSession.user)
-          setSession(fallbackSession)
-        } else if (!storedEmail && fallbackEmail) {
-          const fallbackSession = createFallbackSession(fallbackEmail)
-          setUser(fallbackSession.user)
-          setSession(fallbackSession)
-        }
-        setIsLoading(false)
-        return
-      }
-
-      if (data.session) {
-        setSession(data.session)
-        setUser(data.session.user)
-      } else if (hasStoredFallbackSession && storedEmail) {
-        const fallbackSession = createFallbackSession(storedEmail)
-        setUser(fallbackSession.user)
-        setSession(fallbackSession)
-      } else {
-        setSession(null)
-        setUser(null)
-      }
-      setIsLoading(false)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (nextSession) {
-        setSession(nextSession)
-        setUser(nextSession.user)
-      } else {
-        const latestStoredEmail = localStorage.getItem('doblepp-auth-email')
-        const latestStoredPassword = localStorage.getItem('doblepp-auth-password')
-
-        if (latestStoredEmail && latestStoredPassword && isFallbackCredentials(latestStoredEmail, latestStoredPassword)) {
-          const fallbackSession = createFallbackSession(latestStoredEmail)
-          setUser(fallbackSession.user)
-          setSession(fallbackSession)
-        } else {
-          setSession(null)
-          setUser(null)
-        }
-      }
-      setIsLoading(false)
-    })
-
-    return () => {
-      isMounted = false
-      subscription.unsubscribe()
-    }
+    setSession(readStoredSession())
+    setIsLoading(false)
   }, [])
+
+  const { email: configuredEmail, password: configuredPassword, name: configuredName } = getConfiguredCredentials()
+  const isConfigured = Boolean(configuredEmail && configuredPassword)
+  const configError = isConfigured
+    ? null
+    : 'Faltan VITE_APP_ADMIN_EMAIL y VITE_APP_ADMIN_PASSWORD. Configúralas antes de publicar.'
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
+      user: session?.user ?? null,
       session,
       isLoading,
-      isConfigured: true,
+      isConfigured,
       configError,
-      role: resolveRole(user),
+      role: session?.user.role ?? 'administrator',
       async signIn(email, password) {
+        if (!isConfigured) {
+          return configError
+        }
+
         const normalizedEmail = email.trim().toLowerCase()
-        const { fallbackEmail, fallbackPassword } = getFallbackCredentials()
-
-        if (normalizedEmail === fallbackEmail && password === fallbackPassword) {
-          const nextSession = applyFallbackLogin(normalizedEmail)
-          setUser(nextSession.user)
-          setSession(nextSession.session)
-          return null
+        if (normalizedEmail !== configuredEmail || password !== configuredPassword) {
+          return 'Correo o contraseña incorrectos.'
         }
 
-        if (supabase) {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          })
-
-          if (error) {
-            return error.message
-          }
-
-          localStorage.setItem('doblepp-auth-email', data.user.email ?? email)
-          localStorage.setItem('doblepp-auth-password', password)
-          return null
-        }
-
-        return 'Correo o contraseña incorrectos.'
+        const nextSession = createSession(normalizedEmail, configuredName)
+        persistSession(nextSession)
+        setSession(nextSession)
+        return null
       },
       async signOut() {
-        if (supabase) {
-          const { error } = await supabase.auth.signOut()
-          if (error) {
-            localStorage.removeItem('doblepp-auth-email')
-            localStorage.removeItem('doblepp-auth-password')
-            setUser(null)
-            setSession(null)
-            return error.message
-          }
-        }
-
-        localStorage.removeItem('doblepp-auth-email')
-        localStorage.removeItem('doblepp-auth-password')
-        setUser(null)
+        persistSession(null)
         setSession(null)
         return null
       },
     }),
-    [configError, isLoading, session, user],
+    [configError, configuredEmail, configuredName, configuredPassword, isConfigured, isLoading, session],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

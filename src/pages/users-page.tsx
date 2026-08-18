@@ -115,11 +115,11 @@ export function UsersPage() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Política de seguridad" description="La contraseña y la autenticación se manejan de forma segura por Supabase o por credenciales del entorno local.">
+      <SectionCard title="Política de seguridad" description="La autenticación se controla desde variables de entorno y la sesión privada del navegador.">
         <div className="flex items-start gap-3 rounded-[24px] border border-sky-400/20 bg-sky-400/10 p-5">
           <ShieldCheck className="mt-0.5 h-5 w-5 text-sky-200" />
           <p className="text-sm leading-7 text-sky-50/90">
-            El sistema está preparado para acceso real, permisos por rol y auditoría operativa sin depender de pantallas decorativas ni botones sin función.
+            El sistema está preparado para acceso privado, permisos por rol y auditoría operativa sin depender de pantallas decorativas ni botones sin función.
           </p>
         </div>
       </SectionCard>

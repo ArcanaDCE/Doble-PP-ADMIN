@@ -4,16 +4,16 @@ Aplicación administrativa privada para la operación interna de Doble PP Compan
 
 ## Estado actual
 
-Esta versión quedó simplificada para publicación y uso interno entre dos personas autorizadas.
+Esta versión quedó simplificada para publicación inmediata y uso interno privado.
 
 - estructura base con React + Vite + TypeScript
 - layout administrativo responsive
 - navegación desktop/mobile
 - pantalla de acceso visual
 - vistas base para dashboard, empleados, productos, inventario, ventas, finanzas, pagos, reportes, usuarios y configuración
-- acceso local simple sin depender de una capa de seguridad compleja
+- acceso privado simple con variables de entorno
 
-> La autenticación funciona con credenciales internas y modo fallback para despliegue rápido en Netlify.
+> La autenticación funciona con credenciales internas definidas en variables de entorno, sin depender de Supabase para publicar hoy.
 
 ## Stack actual
 
@@ -22,7 +22,6 @@ Esta versión quedó simplificada para publicación y uso interno entre dos pers
 - Vite
 - Tailwind CSS 4
 - React Router
-- TanStack Query
 - Lucide React
 - Acceso local con credenciales internas
 
@@ -64,10 +63,12 @@ VITE_APP_ADMIN_PASSWORD=DoblePP2025!
 3. Usa estas opciones:
    - Build command: `npm run build`
    - Publish directory: `dist`
-4. Agrega estas variables de entorno en Netlify:
+4. En Netlify usa Node 22 y permite instalar devDependencies (el [netlify.toml](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/netlify.toml>) ya lo fuerza).
+5. Agrega estas variables de entorno en Netlify:
    - `VITE_APP_ADMIN_EMAIL=admin@doblepp.com`
    - `VITE_APP_ADMIN_PASSWORD=DoblePP2025!`
-5. Despliega.
+   - `VITE_APP_ADMIN_NAME=Administrador principal`
+6. Despliega.
 
 El archivo [netlify.toml](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/netlify.toml>) ya incluye el redirect SPA para que React Router funcione al recargar rutas internas.
 

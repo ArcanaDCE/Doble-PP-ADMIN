@@ -8,7 +8,7 @@ export function NotFoundPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-300">404</p>
         <h1 className="mt-4 text-4xl font-semibold text-white">Página no encontrada</h1>
         <p className="mt-4 text-sm leading-7 text-slate-400">
-          La ruta solicitada no existe dentro del prototipo administrativo actual.
+          La ruta solicitada no existe dentro del panel administrativo actual.
         </p>
         <Link to="/dashboard" className="mt-6 inline-flex">
           <Button>Volver al dashboard</Button>
