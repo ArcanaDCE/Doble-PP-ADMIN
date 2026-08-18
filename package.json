@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:host": "vite --host localhost --port 4173 --open /login",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview",
-    "preview:host": "vite preview --host localhost --port 4173 --open /login"
+    "dev": "npx vite",
+    "dev:host": "npx vite --host localhost --port 4173 --open /login",
+    "build": "npx tsc -b && npx vite build",
+    "lint": "npx oxlint",
+    "preview": "npx vite preview",
+    "preview:host": "npx vite preview --host localhost --port 4173 --open /login"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
