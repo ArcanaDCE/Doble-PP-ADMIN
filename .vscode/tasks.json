@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Doble PP: iniciar desarrollo",
+      "type": "shell",
+      "command": "${workspaceFolder}\\start-dev.cmd",
+      "problemMatcher": []
+    },
+    {
+      "label": "Doble PP: iniciar preview",
+      "type": "shell",
+      "command": "${workspaceFolder}\\start-preview.cmd",
+      "problemMatcher": []
+    }
+  ]
+}
