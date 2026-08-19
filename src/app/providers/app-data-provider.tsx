@@ -8,7 +8,10 @@ import {
   type ActivityItem,
   type AppData,
   type Employee,
+  type EmployeeStock,
+  type EmployeeStockMovement,
   type FinanceMovement,
+  type InventoryMovement,
   type Payment,
   type Product,
   type Sale,
@@ -18,20 +21,30 @@ interface AppDataContextValue {
   data: AppData
   employees: Employee[]
   products: Product[]
-  inventoryMovements: import('../../lib/app-data.ts').InventoryMovement[]
+  inventoryMovements: InventoryMovement[]
+  employeeStocks: EmployeeStock[]
+  employeeStockMovements: EmployeeStockMovement[]
   sales: Sale[]
   payments: Payment[]
   financeMovements: FinanceMovement[]
   users: import('../../lib/app-data.ts').AppUser[]
   activity: ActivityItem[]
-  addEmployee: (employee: Omit<Employee, 'id' | 'sales' | 'debt' | 'savings' | 'payments'>) => void
+  addEmployee: (employee: Omit<Employee, 'id' | 'sales' | 'debt' | 'savings' | 'payments'> & {
+    initialStock?: Array<{
+      productId: string
+      quantity: number
+      notes?: string
+    }>
+  }) => { employee: Employee | null; error: string | null }
   updateEmployee: (employeeId: string, updates: Partial<Employee>) => void
   deleteEmployee: (employeeId: string) => void
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'status'> & { status?: Product['status'] }) => void
   updateProduct: (productId: string, updates: Partial<Product>) => void
   deleteProduct: (productId: string) => void
   addInventoryMovement: (movement: { productId: string; productName: string; type: 'Entrada' | 'Salida' | 'Ajuste' | 'Devolución'; quantity: number; reason: string; user: string }) => void
-  addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => void
+  assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => string | null
+  adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => string | null
+  addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => string | null
   addPayment: (payment: Omit<Payment, 'id'>) => void
   addFinanceMovement: (movement: Omit<FinanceMovement, 'id'>) => void
   addActivity: (activity: Omit<ActivityItem, 'id'>) => void
@@ -99,6 +112,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     employees: data.employees,
     products: data.products,
     inventoryMovements: data.inventoryMovements,
+    employeeStocks: data.employeeStocks,
+    employeeStockMovements: data.employeeStockMovements,
     sales: data.sales,
     payments: data.payments,
     financeMovements: data.financeMovements,
@@ -106,13 +121,131 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     activity: data.activity,
     totals,
     addEmployee: (employee) => {
-      setData((current) => ({
-        ...current,
-        employees: [
-          { ...employee, id: createId('employee'), sales: 0, debt: 0, savings: 0, payments: 0 },
-          ...current.employees,
-        ],
-      }))
+      let createdEmployee: Employee | null = null
+      let errorMessage: string | null = null
+      const employeeId = createId('employee')
+
+      setData((current) => {
+        const initialStock = employee.initialStock ?? []
+        const normalizedAssignments = new Map<string, { product: Product; quantity: number; notes: string[] }>()
+
+        for (const assignment of initialStock) {
+          if (assignment.quantity <= 0) {
+            errorMessage = 'La cantidad inicial por producto debe ser mayor a cero.'
+            return current
+          }
+
+          const product = current.products.find((item) => item.id === assignment.productId)
+          if (!product) {
+            errorMessage = 'Uno de los productos seleccionados ya no está disponible.'
+            return current
+          }
+
+          const existingAssignment = normalizedAssignments.get(product.id)
+          if (existingAssignment) {
+            existingAssignment.quantity += assignment.quantity
+            if (assignment.notes?.trim()) {
+              existingAssignment.notes.push(assignment.notes.trim())
+            }
+          } else {
+            normalizedAssignments.set(product.id, {
+              product,
+              quantity: assignment.quantity,
+              notes: assignment.notes?.trim() ? [assignment.notes.trim()] : [],
+            })
+          }
+        }
+
+        for (const { product, quantity } of normalizedAssignments.values()) {
+          if (product.stock < quantity) {
+            errorMessage = `No hay suficiente stock en bodega para asignar ${quantity} unidad(es) de ${product.name}.`
+            return current
+          }
+        }
+
+        const now = new Date().toISOString()
+        const nextEmployee: Employee = {
+          id: employeeId,
+          name: employee.name,
+          position: employee.position,
+          status: employee.status,
+          hiredAt: employee.hiredAt,
+          notes: employee.notes,
+          sales: 0,
+          debt: 0,
+          savings: 0,
+          payments: 0,
+        }
+
+        createdEmployee = nextEmployee
+
+        if (normalizedAssignments.size === 0) {
+          return {
+            ...current,
+            employees: [nextEmployee, ...current.employees],
+          }
+        }
+
+        const nextProducts: Product[] = current.products.map((product) => {
+          const assignment = normalizedAssignments.get(product.id)
+          if (!assignment) {
+            return product
+          }
+
+          const nextStock = product.stock - assignment.quantity
+          return {
+            ...product,
+            stock: nextStock,
+            status: nextStock <= product.minimumStock ? 'Bajo stock' : 'Activo',
+          }
+        })
+
+        const nextEmployeeStocks = Array.from(normalizedAssignments.values()).map(({ product, quantity }) => ({
+          id: createId('employee_stock'),
+          employeeId,
+          employeeName: employee.name,
+          productId: product.id,
+          productName: product.name,
+          quantity,
+          totalAssigned: quantity,
+          totalSold: 0,
+          updatedAt: now,
+        } satisfies EmployeeStock))
+
+        const nextInventoryMovements = Array.from(normalizedAssignments.values()).map(({ product, quantity, notes }) => ({
+          id: createId('movement'),
+          productId: product.id,
+          productName: product.name,
+          type: 'Salida',
+          quantity,
+          reason: notes[0] || `Asignación inicial a ${employee.name}`,
+          user: 'Administrador',
+          createdAt: now,
+        } satisfies InventoryMovement))
+
+        const nextEmployeeMovements = Array.from(normalizedAssignments.values()).map(({ product, quantity, notes }) => ({
+          id: createId('employee_stock_movement'),
+          employeeId,
+          employeeName: employee.name,
+          productId: product.id,
+          productName: product.name,
+          type: 'Asignación',
+          quantity,
+          notes: notes[0] || 'Stock inicial asignado al empleado',
+          createdAt: now,
+        } satisfies EmployeeStockMovement))
+
+        return {
+          ...current,
+          employees: [nextEmployee, ...current.employees],
+          products: nextProducts,
+          inventoryMovements: [...nextInventoryMovements, ...current.inventoryMovements],
+          employeeStocks: [...nextEmployeeStocks, ...current.employeeStocks],
+          employeeStockMovements: [...nextEmployeeMovements, ...current.employeeStockMovements],
+        } satisfies AppData
+      })
+
+      return { employee: createdEmployee, error: errorMessage }
     },
     updateEmployee: (employeeId, updates) => {
       setData((current) => ({
@@ -126,6 +259,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       setData((current) => ({
         ...current,
         employees: current.employees.filter((employee) => employee.id !== employeeId),
+        employeeStocks: current.employeeStocks.filter((row) => row.employeeId !== employeeId),
+        employeeStockMovements: current.employeeStockMovements.filter((row) => row.employeeId !== employeeId),
       }))
     },
     addProduct: (product) => {
@@ -154,6 +289,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       setData((current) => ({
         ...current,
         products: current.products.filter((product) => product.id !== productId),
+        employeeStocks: current.employeeStocks.filter((row) => row.productId !== productId),
+        employeeStockMovements: current.employeeStockMovements.filter((row) => row.productId !== productId),
       }))
     },
     addInventoryMovement: (movement) => {
@@ -189,19 +326,306 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         } satisfies AppData
       })
     },
+    assignEmployeeStock: (assignment) => {
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const employee = current.employees.find((item) => item.id === assignment.employeeId)
+        const product = current.products.find((item) => item.id === assignment.productId)
+
+        if (!employee) {
+          errorMessage = 'El empleado seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (!product) {
+          errorMessage = 'El producto seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (assignment.quantity <= 0) {
+          errorMessage = 'La cantidad asignada debe ser mayor a cero.'
+          return current
+        }
+
+        if (product.stock < assignment.quantity) {
+          errorMessage = 'No hay suficiente stock en bodega para entregar esa cantidad.'
+          return current
+        }
+
+        const now = new Date().toISOString()
+        const existingStock = current.employeeStocks.find(
+          (item) => item.employeeId === employee.id && item.productId === product.id,
+        )
+        const nextWarehouseStock = product.stock - assignment.quantity
+        const updatedProduct: Product = {
+          ...product,
+          stock: nextWarehouseStock,
+          status: nextWarehouseStock <= product.minimumStock ? 'Bajo stock' : 'Activo',
+        }
+        const nextEmployeeStock: EmployeeStock = existingStock
+          ? {
+              ...existingStock,
+              employeeName: employee.name,
+              productName: product.name,
+              quantity: existingStock.quantity + assignment.quantity,
+              totalAssigned: existingStock.totalAssigned + assignment.quantity,
+              updatedAt: now,
+            }
+          : {
+              id: createId('employee_stock'),
+              employeeId: employee.id,
+              employeeName: employee.name,
+              productId: product.id,
+              productName: product.name,
+              quantity: assignment.quantity,
+              totalAssigned: assignment.quantity,
+              totalSold: 0,
+              updatedAt: now,
+            }
+        const nextInventoryMovement: InventoryMovement = {
+          id: createId('movement'),
+          productId: product.id,
+          productName: product.name,
+          type: 'Salida',
+          quantity: assignment.quantity,
+          reason: assignment.notes?.trim() || `Asignación a ${employee.name}`,
+          user: assignment.user,
+          createdAt: now,
+        }
+        const nextEmployeeMovement: EmployeeStockMovement = {
+          id: createId('employee_stock_movement'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          productId: product.id,
+          productName: product.name,
+          type: 'Asignación',
+          quantity: assignment.quantity,
+          notes: assignment.notes?.trim() || 'Stock asignado al empleado',
+          createdAt: now,
+        }
+
+        return {
+          ...current,
+          products: current.products.map((item) => (item.id === product.id ? updatedProduct : item)),
+          inventoryMovements: [nextInventoryMovement, ...current.inventoryMovements],
+          employeeStocks: existingStock
+            ? current.employeeStocks.map((item) => (item.id === existingStock.id ? nextEmployeeStock : item))
+            : [nextEmployeeStock, ...current.employeeStocks],
+          employeeStockMovements: [nextEmployeeMovement, ...current.employeeStockMovements],
+        } satisfies AppData
+      })
+
+      return errorMessage
+    },
+    adjustEmployeeStock: (adjustment) => {
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const employee = current.employees.find((item) => item.id === adjustment.employeeId)
+        const product = current.products.find((item) => item.id === adjustment.productId)
+        const existingStock = current.employeeStocks.find(
+          (item) => item.employeeId === adjustment.employeeId && item.productId === adjustment.productId,
+        )
+
+        if (!employee) {
+          errorMessage = 'El empleado seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (!product) {
+          errorMessage = 'El producto seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (adjustment.quantity <= 0) {
+          errorMessage = 'La cantidad debe ser mayor a cero.'
+          return current
+        }
+
+        if (adjustment.direction === 'add') {
+          if (product.stock < adjustment.quantity) {
+            errorMessage = 'No hay suficiente stock en bodega para agregar esa cantidad.'
+            return current
+          }
+
+          const now = new Date().toISOString()
+          const nextWarehouseStock = product.stock - adjustment.quantity
+          const updatedProduct: Product = {
+            ...product,
+            stock: nextWarehouseStock,
+            status: nextWarehouseStock <= product.minimumStock ? 'Bajo stock' : 'Activo',
+          }
+          const updatedEmployeeStock: EmployeeStock = existingStock
+            ? {
+                ...existingStock,
+                employeeName: employee.name,
+                productName: product.name,
+                quantity: existingStock.quantity + adjustment.quantity,
+                totalAssigned: existingStock.totalAssigned + adjustment.quantity,
+                updatedAt: now,
+              }
+            : {
+                id: createId('employee_stock'),
+                employeeId: employee.id,
+                employeeName: employee.name,
+                productId: product.id,
+                productName: product.name,
+                quantity: adjustment.quantity,
+                totalAssigned: adjustment.quantity,
+                totalSold: 0,
+                updatedAt: now,
+              }
+          const nextInventoryMovement: InventoryMovement = {
+            id: createId('movement'),
+            productId: product.id,
+            productName: product.name,
+            type: 'Salida',
+            quantity: adjustment.quantity,
+            reason: adjustment.notes?.trim() || `Asignación a ${employee.name}`,
+            user: adjustment.user,
+            createdAt: now,
+          }
+          const nextEmployeeMovement: EmployeeStockMovement = {
+            id: createId('employee_stock_movement'),
+            employeeId: employee.id,
+            employeeName: employee.name,
+            productId: product.id,
+            productName: product.name,
+            type: 'Asignación',
+            quantity: adjustment.quantity,
+            notes: adjustment.notes?.trim() || 'Stock agregado al empleado',
+            createdAt: now,
+          }
+
+          return {
+            ...current,
+            products: current.products.map((item) => (item.id === product.id ? updatedProduct : item)),
+            inventoryMovements: [nextInventoryMovement, ...current.inventoryMovements],
+            employeeStocks: existingStock
+              ? current.employeeStocks.map((item) => (item.id === existingStock.id ? updatedEmployeeStock : item))
+              : [updatedEmployeeStock, ...current.employeeStocks],
+            employeeStockMovements: [nextEmployeeMovement, ...current.employeeStockMovements],
+          } satisfies AppData
+        }
+
+        if (!existingStock || existingStock.quantity < adjustment.quantity) {
+          errorMessage = 'El empleado no tiene suficiente stock para retirar esa cantidad.'
+          return current
+        }
+
+        const now = new Date().toISOString()
+        const nextWarehouseStock = product.stock + adjustment.quantity
+        const updatedProduct: Product = {
+          ...product,
+          stock: nextWarehouseStock,
+          status: nextWarehouseStock <= product.minimumStock ? 'Bajo stock' : 'Activo',
+        }
+        const updatedEmployeeStock: EmployeeStock = {
+          ...existingStock,
+          employeeName: employee.name,
+          productName: product.name,
+          quantity: existingStock.quantity - adjustment.quantity,
+          updatedAt: now,
+        }
+        const nextInventoryMovement: InventoryMovement = {
+          id: createId('movement'),
+          productId: product.id,
+          productName: product.name,
+          type: 'Entrada',
+          quantity: adjustment.quantity,
+          reason: adjustment.notes?.trim() || `Retiro a ${employee.name}`,
+          user: adjustment.user,
+          createdAt: now,
+        }
+        const nextEmployeeMovement: EmployeeStockMovement = {
+          id: createId('employee_stock_movement'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          productId: product.id,
+          productName: product.name,
+          type: 'Retiro',
+          quantity: adjustment.quantity,
+          notes: adjustment.notes?.trim() || 'Stock retirado del empleado',
+          createdAt: now,
+        }
+
+        return {
+          ...current,
+          products: current.products.map((item) => (item.id === product.id ? updatedProduct : item)),
+          inventoryMovements: [nextInventoryMovement, ...current.inventoryMovements],
+          employeeStocks: current.employeeStocks.map((item) =>
+            item.id === existingStock.id ? updatedEmployeeStock : item,
+          ),
+          employeeStockMovements: [nextEmployeeMovement, ...current.employeeStockMovements],
+        } satisfies AppData
+      })
+
+      return errorMessage
+    },
     addSale: (sale) => {
-      setData((current) => ({
-        ...current,
-        sales: [
-          { ...sale, id: createId('sale'), createdAt: new Date().toISOString() },
-          ...current.sales,
-        ],
-        employees: current.employees.map((employee) =>
-          employee.id === sale.employeeId
-            ? { ...employee, sales: employee.sales + sale.total, payments: employee.payments + sale.total * 0.1 }
-            : employee,
-        ),
-      }) satisfies AppData)
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const employee = current.employees.find((item) => item.id === sale.employeeId)
+        const product = current.products.find((item) => item.id === sale.productId)
+        const employeeStock = current.employeeStocks.find(
+          (item) => item.employeeId === sale.employeeId && item.productId === sale.productId,
+        )
+
+        if (!employee) {
+          errorMessage = 'El empleado seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (!product) {
+          errorMessage = 'El producto seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (!employeeStock || employeeStock.quantity < sale.quantity) {
+          errorMessage = 'El empleado no tiene stock suficiente de ese producto para registrar la venta.'
+          return current
+        }
+
+        const now = new Date().toISOString()
+        const updatedEmployeeStock: EmployeeStock = {
+          ...employeeStock,
+          employeeName: employee.name,
+          productName: product.name,
+          quantity: employeeStock.quantity - sale.quantity,
+          totalSold: employeeStock.totalSold + sale.quantity,
+          updatedAt: now,
+        }
+        const employeeMovement: EmployeeStockMovement = {
+          id: createId('employee_stock_movement'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          productId: product.id,
+          productName: product.name,
+          type: 'Venta',
+          quantity: sale.quantity,
+          notes: `Venta registrada por ${formatCurrency(sale.total)}`,
+          createdAt: now,
+        }
+
+        return {
+          ...current,
+          sales: [
+            { ...sale, id: createId('sale'), createdAt: now },
+            ...current.sales,
+          ],
+          employeeStocks: current.employeeStocks.map((item) =>
+            item.id === employeeStock.id ? updatedEmployeeStock : item,
+          ),
+          employeeStockMovements: [employeeMovement, ...current.employeeStockMovements],
+          employees: current.employees.map((item) =>
+            item.id === sale.employeeId ? { ...item, sales: item.sales + sale.total } : item,
+          ),
+        } satisfies AppData
+      })
+
+      return errorMessage
     },
     addPayment: (payment) => {
       setData((current) => {

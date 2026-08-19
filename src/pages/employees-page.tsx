@@ -1,4 +1,4 @@
-import { Eye, Filter, Plus, Search } from 'lucide-react'
+import { Boxes, Eye, Filter, Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
@@ -8,23 +8,56 @@ import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatCard } from '../components/ui/stat-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency } from '../lib/app-data.ts'
+import { createId, formatCurrency } from '../lib/app-data.ts'
 
-const defaultForm = {
-  name: '',
-  position: '',
-  status: 'Activo' as const,
-  hiredAt: new Date().toISOString().slice(0, 10),
+function createDefaultForm() {
+  return {
+    name: '',
+    position: '',
+    status: 'Activo' as const,
+    hiredAt: new Date().toISOString().slice(0, 10),
+    notes: '',
+  }
+}
+
+const defaultStockForm = {
+  productId: '',
+  quantity: '1',
+  direction: 'add' as 'add' | 'remove',
   notes: '',
 }
 
+function createInitialStockRow() {
+  return {
+    id: createId('employee_stock_row'),
+    productId: '',
+    quantity: '',
+    notes: '',
+  }
+}
+
 export function EmployeesPage() {
-  const { employees, addEmployee, updateEmployee, deleteEmployee, addActivity } = useAppData()
+  const { employees, products, employeeStocks, addEmployee, updateEmployee, deleteEmployee, adjustEmployeeStock, addActivity } = useAppData()
   const { notifySuccess, notifyError } = useFeedback()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(defaultForm)
+  const [form, setForm] = useState(createDefaultForm)
+  const [initialStockRows, setInitialStockRows] = useState<Array<ReturnType<typeof createInitialStockRow>>>([])
+  const [stockManagerEmployeeId, setStockManagerEmployeeId] = useState('')
+  const [stockForm, setStockForm] = useState(defaultStockForm)
+
+  function openEmployeeForm() {
+    setForm(createDefaultForm())
+    setInitialStockRows(products.length > 0 ? [createInitialStockRow()] : [])
+    setShowForm(true)
+  }
+
+  function resetEmployeeForm() {
+    setForm(createDefaultForm())
+    setInitialStockRows([])
+    setShowForm(false)
+  }
 
   const filteredEmployees = useMemo(() => {
     return employees.filter((employee) => {
@@ -37,6 +70,22 @@ export function EmployeesPage() {
     })
   }, [employees, search, statusFilter])
 
+  const initialStockPreview = useMemo(() => {
+    return initialStockRows
+      .filter((row) => row.productId && Number(row.quantity) > 0)
+      .map((row) => {
+        const product = products.find((item) => item.id === row.productId)
+        return {
+          id: row.id,
+          productName: product?.name ?? 'Producto no disponible',
+          quantity: Number(row.quantity),
+          notes: row.notes.trim(),
+        }
+      })
+  }, [initialStockRows, products])
+
+  const initialStockTotalUnits = initialStockPreview.reduce((sum, item) => sum + item.quantity, 0)
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.name.trim() || !form.position.trim()) {
@@ -44,28 +93,121 @@ export function EmployeesPage() {
       return
     }
 
-    addEmployee({
+    const requestedAssignments = initialStockRows.filter((row) => row.productId || row.quantity.trim() || row.notes.trim())
+    const selectedProducts = new Set<string>()
+
+    for (const row of requestedAssignments) {
+      if (!row.productId) {
+        notifyError('Producto pendiente', 'Selecciona el producto en cada línea de inventario inicial.')
+        return
+      }
+
+      if (!row.quantity.trim() || Number(row.quantity) <= 0) {
+        notifyError('Cantidad inválida', 'Indica una cantidad válida en cada producto asignado al empleado.')
+        return
+      }
+
+      if (selectedProducts.has(row.productId)) {
+        notifyError('Producto repetido', 'No repitas el mismo producto. Usa una sola línea por producto.')
+        return
+      }
+
+      selectedProducts.add(row.productId)
+    }
+
+    const { employee, error } = addEmployee({
       name: form.name.trim(),
       position: form.position.trim(),
       status: form.status,
       hiredAt: form.hiredAt,
       notes: form.notes.trim(),
+      initialStock: requestedAssignments.map((row) => ({
+        productId: row.productId,
+        quantity: Number(row.quantity),
+        notes: row.notes.trim(),
+      })),
     })
+
+    if (error || !employee) {
+      notifyError('No se pudo guardar el empleado', error ?? 'Intenta nuevamente.')
+      return
+    }
+
     addActivity({
       user: 'Administrador',
       action: 'Se agregó un empleado',
       module: 'Empleados',
-      record: form.name.trim(),
+      record: employee.name,
       createdAt: new Date().toISOString(),
     })
-    setForm(defaultForm)
-    setShowForm(false)
-    notifySuccess('Empleado guardado', `${form.name.trim()} quedó registrado correctamente.`)
+
+    if (requestedAssignments.length > 0) {
+      addActivity({
+        user: 'Administrador',
+        action: 'Se asignó stock inicial a un empleado',
+        module: 'Empleados',
+        record: `${employee.name} · ${requestedAssignments.length} producto(s)`,
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    resetEmployeeForm()
+    notifySuccess(
+      'Empleado guardado',
+      requestedAssignments.length > 0
+        ? `${employee.name} quedó registrado con ${requestedAssignments.length} producto(s) asignado(s).`
+        : `${employee.name} quedó registrado correctamente.`,
+    )
+  }
+
+  function handleEmployeeStockSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!stockManagerEmployeeId || !stockForm.productId || Number(stockForm.quantity) <= 0) {
+      notifyError('Ajuste incompleto', 'Selecciona empleado, producto y cantidad válida.')
+      return
+    }
+
+    const product = products.find((item) => item.id === stockForm.productId)
+    if (!product || !selectedStockEmployee) {
+      notifyError('Datos no disponibles', 'Recarga el apartado e intenta nuevamente.')
+      return
+    }
+
+    const responseError = adjustEmployeeStock({
+      employeeId: stockManagerEmployeeId,
+      productId: stockForm.productId,
+      quantity: Number(stockForm.quantity),
+      direction: stockForm.direction,
+      notes: stockForm.notes.trim(),
+      user: 'Administrador',
+    })
+
+    if (responseError) {
+      notifyError('No se pudo modificar el stock', responseError)
+      return
+    }
+
+    addActivity({
+      user: 'Administrador',
+      action: stockForm.direction === 'add' ? 'Se agregó stock a un empleado' : 'Se retiró stock de un empleado',
+      module: 'Empleados',
+      record: `${selectedStockEmployee.name} · ${product.name} (${stockForm.quantity})`,
+      createdAt: new Date().toISOString(),
+    })
+    setStockForm(defaultStockForm)
+    notifySuccess(
+      stockForm.direction === 'add' ? 'Stock agregado' : 'Stock retirado',
+      `${selectedStockEmployee.name} ${stockForm.direction === 'add' ? 'recibió' : 'devolvió'} ${stockForm.quantity} unidad(es) de ${product.name}.`,
+    )
   }
 
   const totalSales = employees.reduce((sum, employee) => sum + employee.sales, 0)
   const totalDebt = employees.reduce((sum, employee) => sum + employee.debt, 0)
   const totalSavings = employees.reduce((sum, employee) => sum + employee.savings, 0)
+  const totalAssignedStock = employeeStocks.reduce((sum, item) => sum + item.quantity, 0)
+  const selectedStockEmployee = employees.find((employee) => employee.id === stockManagerEmployeeId) ?? null
+  const selectedEmployeeStocks = employeeStocks.filter((item) => item.employeeId === stockManagerEmployeeId)
 
   return (
     <div className="space-y-6">
@@ -80,7 +222,14 @@ export function EmployeesPage() {
                 Volver al panel
               </Button>
             </Link>
-            <Button onClick={() => setShowForm((value) => !value)}>
+            <Button onClick={() => {
+              if (showForm) {
+                resetEmployeeForm()
+                return
+              }
+
+              openEmployeeForm()
+            }}>
               <Plus className="h-4 w-4" />
               {showForm ? 'Cerrar' : 'Agregar empleado'}
             </Button>
@@ -88,14 +237,15 @@ export function EmployeesPage() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Activos" value={String(employees.filter((item) => item.status === 'Activo').length)} trend="En operación" accent="sky" />
         <StatCard label="Ventas del equipo" value={formatCurrency(totalSales)} trend="Acumulado" accent="emerald" />
         <StatCard label="Saldo neto" value={formatCurrency(totalSavings - totalDebt)} trend="Ahorros menos deudas" accent="amber" />
+        <StatCard label="Stock en empleados" value={String(totalAssignedStock)} trend="Unidades por cortar" accent="violet" />
       </div>
 
       {showForm ? (
-        <SectionCard title="Nuevo empleado" description="Completa los datos básicos del trabajador.">
+        <SectionCard title="Nuevo empleado" description="Completa los datos del trabajador y, si corresponde, asígnale su inventario inicial desde este mismo formulario.">
           <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-300">Nombre</label>
@@ -121,8 +271,148 @@ export function EmployeesPage() {
               <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
               <textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} className="min-h-28 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none" placeholder="Notas del empleado" />
             </div>
+            <div className="md:col-span-2 rounded-[24px] border border-white/10 bg-white/5 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h4 className="text-base font-semibold text-white">Inventario inicial del empleado</h4>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Aquí puedes entregarle varios productos desde el primer momento. La primera línea aparece automáticamente para que el inventario inicial sea más fácil de configurar.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setInitialStockRows((current) => [...current, createInitialStockRow()])}
+                  disabled={products.length === 0}
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar producto
+                </Button>
+              </div>
+
+              {products.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-sm text-slate-300">
+                  Primero registra productos en el módulo de productos para poder asignar inventario inicial al empleado.
+                </div>
+              ) : initialStockRows.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-sm text-slate-300">
+                  Sin productos asignados por ahora. Usa “Agregar producto” para añadir otra línea de inventario.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {initialStockRows.map((row) => {
+                    const selectedProduct = products.find((product) => product.id === row.productId)
+
+                    return (
+                      <div key={row.id} className="rounded-[24px] border border-white/10 bg-slate-950/35 p-4">
+                        <div className="grid gap-4 xl:grid-cols-[1.5fr_0.7fr_1.2fr_auto]">
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-300">Producto</label>
+                            <select
+                              value={row.productId}
+                              onChange={(event) => {
+                                const nextProductId = event.target.value
+                                setInitialStockRows((current) => current.map((item) => (
+                                  item.id === row.id ? { ...item, productId: nextProductId } : item
+                                )))
+                              }}
+                              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+                            >
+                              <option value="">Selecciona producto</option>
+                              {products.map((product) => {
+                                const usedByAnotherRow = initialStockRows.some((item) => item.id !== row.id && item.productId === product.id)
+
+                                return (
+                                  <option key={product.id} value={product.id} disabled={usedByAnotherRow}>
+                                    {product.name} · bodega {product.stock}
+                                  </option>
+                                )
+                              })}
+                            </select>
+                            {selectedProduct ? (
+                              <p className="mt-2 text-xs text-slate-400">
+                                Disponible en bodega: {selectedProduct.stock} unidad{selectedProduct.stock === 1 ? '' : 'es'}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-300">Cantidad</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={row.quantity}
+                              onChange={(event) => {
+                                const nextQuantity = event.target.value
+                                setInitialStockRows((current) => current.map((item) => (
+                                  item.id === row.id ? { ...item, quantity: nextQuantity } : item
+                                )))
+                              }}
+                              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
+                            <input
+                              value={row.notes}
+                              onChange={(event) => {
+                                const nextNotes = event.target.value
+                                setInitialStockRows((current) => current.map((item) => (
+                                  item.id === row.id ? { ...item, notes: nextNotes } : item
+                                )))
+                              }}
+                              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                              placeholder="Entrega inicial, consignación..."
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="w-full xl:w-auto"
+                              onClick={() => setInitialStockRows((current) => current.filter((item) => item.id !== row.id))}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Quitar
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {initialStockPreview.length > 0 ? (
+                <div className="mt-4 rounded-[24px] border border-sky-400/15 bg-sky-400/10 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Resumen del stock inicial</p>
+                      <p className="text-sm text-slate-300">
+                        Este empleado se guardará con {initialStockPreview.length} producto(s) y {initialStockTotalUnits} unidad(es) asignadas.
+                      </p>
+                    </div>
+                    <StatusBadge
+                      label={`${initialStockTotalUnits} unidad${initialStockTotalUnits === 1 ? '' : 'es'}`}
+                      tone="success"
+                    />
+                  </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {initialStockPreview.map((item) => (
+                      <div key={item.id} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium text-white">{item.productName}</p>
+                          <p className="text-sm text-sky-200">{item.quantity} unidad{item.quantity === 1 ? '' : 'es'}</p>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">{item.notes || 'Sin nota para esta asignación inicial.'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <div className="md:col-span-2 flex justify-end gap-3">
-              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
+              <Button type="button" variant="secondary" onClick={resetEmployeeForm}>Cancelar</Button>
               <Button type="submit">Guardar empleado</Button>
             </div>
           </form>
@@ -174,6 +464,9 @@ export function EmployeesPage() {
                     <tr key={employee.id} className="align-top">
                       <td className="px-4 py-4">
                         <p className="font-medium text-white">{employee.name}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {employeeStocks.filter((item) => item.employeeId === employee.id).length} productos · {employeeStocks.filter((item) => item.employeeId === employee.id).reduce((sum, item) => sum + item.quantity, 0)} unidades
+                        </p>
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-300">{employee.position}</td>
                       <td className="px-4 py-4">
@@ -192,6 +485,17 @@ export function EmployeesPage() {
                               Ver
                             </Button>
                           </Link>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setStockManagerEmployeeId((current) => (current === employee.id ? '' : employee.id))
+                              setStockForm(defaultStockForm)
+                            }}
+                          >
+                            <Boxes className="h-4 w-4" />
+                            Stock
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             const nextStatus = employee.status === 'Activo' ? 'Inactivo' : 'Activo'
                             updateEmployee(employee.id, { status: nextStatus })
@@ -232,6 +536,92 @@ export function EmployeesPage() {
           </div>
         )}
       </SectionCard>
+
+      {selectedStockEmployee ? (
+        <SectionCard
+          title={`Stock de ${selectedStockEmployee.name}`}
+          description="Asigna o retira varios tipos de producto directamente desde el módulo de empleados."
+        >
+          <form onSubmit={handleEmployeeStockSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Producto</label>
+              <select
+                value={stockForm.productId}
+                onChange={(event) => setStockForm((current) => ({ ...current, productId: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+              >
+                <option value="">Selecciona producto</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} · bodega {product.stock}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Movimiento</label>
+              <select
+                value={stockForm.direction}
+                onChange={(event) => setStockForm((current) => ({ ...current, direction: event.target.value as 'add' | 'remove' }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+              >
+                <option value="add">Agregar al empleado</option>
+                <option value="remove">Retirar del empleado</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Cantidad</label>
+              <input
+                type="number"
+                min="1"
+                value={stockForm.quantity}
+                onChange={(event) => setStockForm((current) => ({ ...current, quantity: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
+              <input
+                value={stockForm.notes}
+                onChange={(event) => setStockForm((current) => ({ ...current, notes: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                placeholder="Entrega, reposición o retiro"
+              />
+            </div>
+            <div className="md:col-span-2 xl:col-span-4 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setStockManagerEmployeeId('')}>
+                Cerrar
+              </Button>
+              <Button type="submit">Guardar ajuste</Button>
+            </div>
+          </form>
+
+          <div className="mt-6 grid gap-3 lg:grid-cols-2">
+            {selectedEmployeeStocks.length === 0 ? (
+              <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-300 lg:col-span-2">
+                Este empleado todavía no tiene productos asignados. Desde aquí puedes agregarle varios tipos de producto y también retirarlos cuando haga su corte.
+              </div>
+            ) : (
+              selectedEmployeeStocks.map((stock) => (
+                <div key={stock.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{stock.productName}</p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Asignado: {stock.totalAssigned} · Vendido: {stock.totalSold}
+                      </p>
+                    </div>
+                    <StatusBadge
+                      label={`${stock.quantity} disponible${stock.quantity === 1 ? '' : 's'}`}
+                      tone={stock.quantity > 0 ? 'success' : 'neutral'}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </SectionCard>
+      ) : null}
     </div>
   )
 }

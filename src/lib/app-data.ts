@@ -41,6 +41,30 @@ export interface InventoryMovement {
   createdAt: string
 }
 
+export interface EmployeeStock {
+  id: string
+  employeeId: string
+  employeeName: string
+  productId: string
+  productName: string
+  quantity: number
+  totalAssigned: number
+  totalSold: number
+  updatedAt: string
+}
+
+export interface EmployeeStockMovement {
+  id: string
+  employeeId: string
+  employeeName: string
+  productId: string
+  productName: string
+  type: 'Asignación' | 'Retiro' | 'Venta'
+  quantity: number
+  notes: string
+  createdAt: string
+}
+
 export interface Sale {
   id: string
   employeeId: string
@@ -100,6 +124,8 @@ export interface AppData {
   employees: Employee[]
   products: Product[]
   inventoryMovements: InventoryMovement[]
+  employeeStocks: EmployeeStock[]
+  employeeStockMovements: EmployeeStockMovement[]
   sales: Sale[]
   payments: Payment[]
   financeMovements: FinanceMovement[]
@@ -148,6 +174,8 @@ export function getDefaultAppData(): AppData {
     employees: [],
     products: [],
     inventoryMovements: [],
+    employeeStocks: [],
+    employeeStockMovements: [],
     sales: [],
     payments: [],
     financeMovements: [],
@@ -185,6 +213,8 @@ export function loadAppData(): AppData {
       employees: parsed.employees ?? [],
       products: parsed.products ?? [],
       inventoryMovements: parsed.inventoryMovements ?? [],
+      employeeStocks: parsed.employeeStocks ?? [],
+      employeeStockMovements: parsed.employeeStockMovements ?? [],
       sales: parsed.sales ?? [],
       payments: parsed.payments ?? [],
       financeMovements: parsed.financeMovements ?? [],
