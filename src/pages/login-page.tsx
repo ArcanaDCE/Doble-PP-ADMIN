@@ -1,6 +1,7 @@
 import { Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAppData } from '../app/providers/app-data-provider.tsx'
 import { useAuth } from '../app/providers/auth-provider.tsx'
 import { Button } from '../components/ui/button.tsx'
 
@@ -15,6 +16,7 @@ function normalizeAuthError(errorMessage: string) {
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { settings } = useAppData()
   const { configError, isConfigured, signIn } = useAuth()
   const quickAccessEmail = (import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com').trim().toLowerCase()
   const [showPassword, setShowPassword] = useState(false)
@@ -63,7 +65,7 @@ export function LoginPage() {
               Sistema privado
             </p>
             <h1 className="mt-4 max-w-xl text-5xl font-semibold tracking-tight text-white">
-              Doble PP Company
+              {settings.companyName}
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
               Plataforma administrativa interna para controlar empleados, productos, inventario, ventas, pagos y operación financiera con una experiencia moderna y profesional.

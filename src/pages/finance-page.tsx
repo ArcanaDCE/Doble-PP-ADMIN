@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
+import { StatCard } from '../components/ui/stat-card.tsx'
 import { formatCurrency, formatDateTime } from '../lib/app-data.ts'
 
 const movementTypes = ['Deuda', 'Pago de deuda', 'Ahorro', 'Retiro de ahorro', 'Ajuste']
@@ -17,14 +18,24 @@ const defaultForm = {
   admin: 'Administrador',
 }
 
+const defaultExpenseForm = {
+  employeeId: '',
+  concept: '',
+  amount: '0',
+  notes: '',
+  admin: 'Administrador',
+}
+
 export function FinancePage() {
-  const { employees, financeMovements, addFinanceMovement, addActivity } = useAppData()
+  const { employees, financeMovements, expenses, settings, addFinanceMovement, addExpense, updateExpenseStatus, addActivity } = useAppData()
   const { notifySuccess, notifyError } = useFeedback()
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [employeeFilter, setEmployeeFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [form, setForm] = useState(defaultForm)
+  const [expenseForm, setExpenseForm] = useState(defaultExpenseForm)
+  const [expenseFilter, setExpenseFilter] = useState('all')
 
   const filteredMovements = useMemo(() => {
     return financeMovements.filter((row) => {
@@ -36,6 +47,25 @@ export function FinancePage() {
       return matchesFrom && matchesTo && matchesEmployee && matchesType
     })
   }, [employeeFilter, financeMovements, fromDate, toDate, typeFilter])
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((row) => {
+      const rowDate = new Date(row.createdAt).toISOString().slice(0, 10)
+      const matchesFrom = !fromDate || rowDate >= fromDate
+      const matchesTo = !toDate || rowDate <= toDate
+      const matchesEmployee = employeeFilter === 'all' || row.employeeId === employeeFilter
+      const matchesStatus = expenseFilter === 'all' || row.status === expenseFilter
+      return matchesFrom && matchesTo && matchesEmployee && matchesStatus
+    })
+  }, [employeeFilter, expenses, expenseFilter, fromDate, toDate])
+
+  const expenseMonthKey = new Date().toISOString().slice(0, 7)
+  const approvedThisMonth = expenses
+    .filter((expense) => expense.status === 'Aprobado' && expense.createdAt.slice(0, 7) === expenseMonthKey)
+    .reduce((sum, expense) => sum + expense.amount, 0)
+  const pendingExpenses = expenses.filter((expense) => expense.status === 'Pendiente').length
+  const approvedExpenses = expenses.filter((expense) => expense.status === 'Aprobado').length
+  const remainingExpenseLimit = Math.max(settings.expenseMonthlyLimit - approvedThisMonth, 0)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -70,12 +100,82 @@ export function FinancePage() {
     notifySuccess('Movimiento guardado', `${employee.name} quedó actualizado en deudas y ahorros.`)
   }
 
+  function handleExpenseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!expenseForm.employeeId || !expenseForm.concept.trim() || Number(expenseForm.amount) <= 0) {
+      notifyError('Gasto incompleto', 'Selecciona un empleado, concepto y monto válido.')
+      return
+    }
+
+    const employee = employees.find((item) => item.id === expenseForm.employeeId)
+    if (!employee) {
+      notifyError('Empleado no disponible', 'Selecciona nuevamente al empleado antes de guardar el gasto.')
+      return
+    }
+
+    const errorMessage = addExpense({
+      employeeId: employee.id,
+      employeeName: employee.name,
+      concept: expenseForm.concept.trim(),
+      amount: Number(expenseForm.amount),
+      notes: expenseForm.notes.trim(),
+      admin: expenseForm.admin,
+    })
+
+    if (errorMessage) {
+      notifyError('No se pudo guardar el gasto', errorMessage)
+      return
+    }
+
+    addActivity({
+      user: expenseForm.admin,
+      action: 'Se registró un gasto',
+      module: 'Gastos',
+      record: `${employee.name} (${expenseForm.amount})`,
+      createdAt: new Date().toISOString(),
+    })
+
+    setExpenseForm(defaultExpenseForm)
+    notifySuccess(
+      'Gasto registrado',
+      Number(expenseForm.amount) > remainingExpenseLimit
+        ? 'El gasto quedó pendiente de aprobación por exceder el límite mensual.'
+        : 'El gasto quedó registrado y aprobado.',
+    )
+  }
+
+  function handleExpenseStatus(expenseId: string, status: 'Pendiente' | 'Aprobado' | 'Rechazado') {
+    const errorMessage = updateExpenseStatus(expenseId, status, 'Administrador')
+    if (errorMessage) {
+      notifyError('No se pudo actualizar el gasto', errorMessage)
+      return
+    }
+
+    addActivity({
+      user: 'Administrador',
+      action: `Se ${status === 'Aprobado' ? 'aprobó' : 'rechazó'} un gasto`,
+      module: 'Gastos',
+      record: expenseId,
+      createdAt: new Date().toISOString(),
+    })
+
+    notifySuccess('Gasto actualizado', `El gasto quedó en estado ${status.toLowerCase()}.`)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Deudas y ahorros"
-        description="Movimientos reales con cálculo automático de saldo, sin campos mágicos ni montos manuales."
+        description="Movimientos reales con cálculo automático de saldo y control de gastos con límite mensual."
       />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Límite de gastos" value={formatCurrency(settings.expenseMonthlyLimit)} trend="Mensual" accent="sky" />
+        <StatCard label="Gastos aprobados" value={String(approvedExpenses)} trend={formatCurrency(approvedThisMonth)} accent="emerald" />
+        <StatCard label="Gastos pendientes" value={String(pendingExpenses)} trend="En autorización" accent="amber" />
+        <StatCard label="Disponible" value={formatCurrency(remainingExpenseLimit)} trend="Restante del mes" accent="violet" />
+      </div>
 
       <SectionCard title="Registrar movimiento" description="Registra deudas, pagos, ahorros o retiros para cada empleado.">
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -112,6 +212,120 @@ export function FinancePage() {
             <Button type="submit" className="w-full">Guardar movimiento</Button>
           </div>
         </form>
+      </SectionCard>
+
+      <SectionCard title="Gastos autorizados" description="Si el gasto supera el límite mensual, queda pendiente de aprobación.">
+        <form onSubmit={handleExpenseSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Empleado</label>
+            <select
+              value={expenseForm.employeeId}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, employeeId: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+            >
+              <option value="">Selecciona</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>{employee.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Concepto</label>
+            <input
+              value={expenseForm.concept}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, concept: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+              placeholder="Gasolina, recarga, etc."
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Monto</label>
+            <input
+              type="number"
+              min="0"
+              value={expenseForm.amount}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Administrador</label>
+            <input
+              value={expenseForm.admin}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, admin: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+            />
+          </div>
+          <div className="md:col-span-2 xl:col-span-3">
+            <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
+            <input
+              value={expenseForm.notes}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, notes: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+              placeholder="Observaciones del gasto"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button type="submit" className="w-full">Guardar gasto</Button>
+          </div>
+        </form>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-400">Filtrar gastos por estado.</p>
+          <select
+            value={expenseFilter}
+            onChange={(event) => setExpenseFilter(event.target.value)}
+            className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+          >
+            <option value="all">Todos</option>
+            <option value="Pendiente">Pendientes</option>
+            <option value="Aprobado">Aprobados</option>
+            <option value="Rechazado">Rechazados</option>
+          </select>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {filteredExpenses.length === 0 ? (
+            <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-300">
+              No hay gastos registrados con esos filtros.
+            </div>
+          ) : (
+            filteredExpenses.map((expense) => (
+              <div key={expense.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-medium text-white">{expense.concept}</p>
+                    <p className="mt-1 text-sm text-slate-400">{expense.employeeName} · {expense.admin}</p>
+                  </div>
+                  <StatusBadge
+                    label={expense.status}
+                    tone={expense.status === 'Aprobado' ? 'success' : expense.status === 'Pendiente' ? 'warning' : 'danger'}
+                  />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Monto</p>
+                    <p className="mt-1 font-medium text-white">{formatCurrency(expense.amount)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Fecha</p>
+                    <p className="mt-1 font-medium text-white">{formatDateTime(expense.createdAt)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Notas</p>
+                    <p className="mt-1 font-medium text-white">{expense.notes || 'Sin notas'}</p>
+                  </div>
+                </div>
+                {expense.status === 'Pendiente' ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => handleExpenseStatus(expense.id, 'Aprobado')}>Aprobar</Button>
+                    <Button size="sm" variant="danger" onClick={() => handleExpenseStatus(expense.id, 'Rechazado')}>Rechazar</Button>
+                  </div>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
       </SectionCard>
 
       <SectionCard title="Movimientos registrados" description="Filtra por empleado, tipo o rango de fechas.">

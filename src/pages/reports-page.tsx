@@ -73,7 +73,7 @@ export function ReportsPage() {
 
   const reportCards = [
     {
-      label: 'Ventas',
+      label: 'Ventas de hoy',
       value: formatCurrency(totals.salesToday),
       trend: sales.length > 0 ? `${sales.length} operaciones registradas` : 'Sin ventas registradas',
       accent: 'emerald' as const,

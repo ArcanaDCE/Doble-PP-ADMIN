@@ -22,7 +22,7 @@ export function AdminShell() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [today, setToday] = useState(() => new Date())
   const { role, user } = useAuth()
-  const { employees, products } = useAppData()
+  const { employees, products, settings } = useAppData()
 
   const lastSyncLabel = useMemo(
     () =>
@@ -47,8 +47,8 @@ export function AdminShell() {
     }
 
     const item = navigationItems.find((entry) => entry.path === location.pathname)
-    return item?.label ?? routeTitles[location.pathname] ?? 'Doble PP Company'
-  }, [location.pathname])
+    return item?.label ?? routeTitles[location.pathname] ?? settings.companyName
+  }, [location.pathname, settings.companyName])
 
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -156,7 +156,7 @@ export function AdminShell() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-300">
-                  Doble PP Company
+                  {settings.companyName}
                 </p>
                <div className="mt-1 flex flex-wrap items-center gap-2">
                   <h1 className="truncate text-2xl font-semibold text-white">{currentTitle}</h1>

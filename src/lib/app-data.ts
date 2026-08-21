@@ -3,6 +3,20 @@ export type ProductStatus = 'Activo' | 'Bajo stock' | 'Inactivo'
 
 export type RoleName = 'administrator' | 'supervisor'
 
+export interface AppSettings {
+  companyName: string
+  primaryColor: string
+  requireApproval: boolean
+  sessionReminder: boolean
+  lowStockAlert: boolean
+  dailySummaryEmail: boolean
+  defaultCurrency: 'MXN' | 'USD'
+  defaultTimezone: string
+  commissionRuleAmount: number
+  commissionRuleBonus: number
+  expenseMonthlyLimit: number
+}
+
 export interface Employee {
   id: string
   name: string
@@ -65,6 +79,42 @@ export interface EmployeeStockMovement {
   createdAt: string
 }
 
+export interface EmployeeCut {
+  id: string
+  employeeId: string
+  employeeName: string
+  closedBy: string
+  createdAt: string
+  salesTotal: number
+  xLevel: number
+  commission: number
+  assignedUnits: number
+  soldUnits: number
+  remainingUnits: number
+  debt: number
+  savings: number
+  payments: number
+  expenses: number
+  net: number
+  notes?: string
+}
+
+export type ExpenseStatus = 'Pendiente' | 'Aprobado' | 'Rechazado'
+
+export interface Expense {
+  id: string
+  employeeId: string
+  employeeName: string
+  concept: string
+  amount: number
+  status: ExpenseStatus
+  admin: string
+  createdAt: string
+  notes?: string
+  approvedBy?: string
+  updatedAt?: string
+}
+
 export interface Sale {
   id: string
   employeeId: string
@@ -121,11 +171,14 @@ export interface ActivityItem {
 }
 
 export interface AppData {
+  settings: AppSettings
   employees: Employee[]
   products: Product[]
   inventoryMovements: InventoryMovement[]
   employeeStocks: EmployeeStock[]
   employeeStockMovements: EmployeeStockMovement[]
+  cuts: EmployeeCut[]
+  expenses: Expense[]
   sales: Sale[]
   payments: Payment[]
   financeMovements: FinanceMovement[]
@@ -134,6 +187,7 @@ export interface AppData {
 }
 
 export const APP_STORAGE_KEY = 'doble-pp-admin-v1'
+export const SETTINGS_STORAGE_KEY = 'doble-pp-settings-v1'
 
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat('es-MX', {
@@ -171,11 +225,26 @@ export function getDefaultAppData(): AppData {
   const adminEmail = import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com'
 
   return {
+    settings: {
+      companyName: 'Doble PP Company',
+      primaryColor: '#38bdf8',
+      requireApproval: true,
+      sessionReminder: true,
+      lowStockAlert: true,
+      dailySummaryEmail: true,
+      defaultCurrency: 'MXN',
+      defaultTimezone: 'America/Mexico_City',
+      commissionRuleAmount: 4000,
+      commissionRuleBonus: 500,
+      expenseMonthlyLimit: 400,
+    },
     employees: [],
     products: [],
     inventoryMovements: [],
     employeeStocks: [],
     employeeStockMovements: [],
+    cuts: [],
+    expenses: [],
     sales: [],
     payments: [],
     financeMovements: [],
@@ -207,14 +276,54 @@ export function loadAppData(): AppData {
     }
 
     const parsed = JSON.parse(raw) as Partial<AppData>
+    const legacySettings = (() => {
+      try {
+        const settingsRaw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+        return settingsRaw ? (JSON.parse(settingsRaw) as Partial<AppSettings>) : null
+      } catch {
+        return null
+      }
+    })()
+
+    const normalizedCuts = (parsed.cuts ?? []).map((cut) => ({
+      ...cut,
+      salesTotal: cut.salesTotal ?? 0,
+      xLevel: cut.xLevel ?? 0,
+      commission: cut.commission ?? 0,
+      assignedUnits: cut.assignedUnits ?? 0,
+      soldUnits: cut.soldUnits ?? 0,
+      remainingUnits: cut.remainingUnits ?? 0,
+      debt: cut.debt ?? 0,
+      savings: cut.savings ?? 0,
+      payments: cut.payments ?? 0,
+      expenses: cut.expenses ?? 0,
+      net: cut.net ?? ((cut.commission ?? 0) - (cut.debt ?? 0) - (cut.expenses ?? 0)),
+      notes: cut.notes ?? '',
+    }))
+
+    const normalizedExpenses = (parsed.expenses ?? []).map((expense) => ({
+      ...expense,
+      status: expense.status ?? 'Pendiente',
+      notes: expense.notes ?? '',
+      approvedBy: expense.approvedBy ?? '',
+      updatedAt: expense.updatedAt ?? expense.createdAt,
+    }))
+
     return {
       ...getDefaultAppData(),
       ...parsed,
+      settings: {
+        ...getDefaultAppData().settings,
+        ...legacySettings,
+        ...parsed.settings,
+      },
       employees: parsed.employees ?? [],
       products: parsed.products ?? [],
       inventoryMovements: parsed.inventoryMovements ?? [],
       employeeStocks: parsed.employeeStocks ?? [],
       employeeStockMovements: parsed.employeeStockMovements ?? [],
+      cuts: normalizedCuts,
+      expenses: normalizedExpenses,
       sales: parsed.sales ?? [],
       payments: parsed.payments ?? [],
       financeMovements: parsed.financeMovements ?? [],

@@ -14,9 +14,9 @@ export function DashboardPage() {
 
   const summaryCards = [
     { label: 'Empleados activos', value: String(totals.activeEmployees), trend: 'Activos en operación', accent: 'sky' as const, badge: 'Activos' },
-    { label: 'Productos', value: String(totals.totalProducts), trend: 'Catálogo disponible', accent: 'violet' as const, badge: 'Stock' },
-    { label: 'Inventario total', value: String(totals.availableInventory), trend: 'Unidades registradas', accent: 'emerald' as const, badge: 'Inventario' },
-    { label: 'Deuda pendiente', value: formatCurrency(totals.debtSum), trend: 'Saldos acumulados', accent: 'amber' as const, badge: 'Revisión' },
+    { label: 'Ventas hoy', value: formatCurrency(totals.salesToday), trend: 'Registradas en el día', accent: 'emerald' as const, badge: 'Hoy' },
+    { label: 'Ventas semana', value: formatCurrency(totals.salesWeek), trend: 'Últimos 7 días', accent: 'violet' as const, badge: 'Semana' },
+    { label: 'Ventas mes', value: formatCurrency(totals.salesMonth), trend: 'Mes actual', accent: 'amber' as const, badge: 'Mes' },
   ]
 
   return (
@@ -130,7 +130,8 @@ export function DashboardPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5">
               <p className="text-sm text-slate-400">Ventas del sistema</p>
-              <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(totals.salesToday)}</p>
+              <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(totals.salesMonth)}</p>
+              <p className="mt-2 text-sm text-slate-400">Ventas del mes actual</p>
               <div className="mt-6 flex h-32 items-end gap-3">
                 {[35, 48, 42, 61, 72, 58, 80].map((height, index) => (
                   <div

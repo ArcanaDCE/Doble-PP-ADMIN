@@ -19,6 +19,7 @@ const defaultAssignmentForm = {
 export function EmployeeProfilePage() {
   const { employeeId } = useParams()
   const {
+    settings,
     employees,
     products,
     sales,
@@ -51,6 +52,13 @@ export function EmployeeProfilePage() {
   const employeeStockHistory = employeeStockMovements.filter((item) => item.employeeId === employee.id)
   const totalAssignedUnits = employeeAssignedStock.reduce((sum, item) => sum + item.quantity, 0)
   const totalProductsAssigned = employeeAssignedStock.length
+  const xRules = settings.commissionRuleAmount > 0 ? settings.commissionRuleAmount : 4000
+  const xBonus = settings.commissionRuleBonus > 0 ? settings.commissionRuleBonus : 500
+  const xRemainder = employee.sales % xRules
+  const xLevel = Math.floor(employee.sales / xRules)
+  const xProgress = Math.min(xRemainder / xRules, 1)
+  const nextXRemaining = xRemainder === 0 ? xRules : xRules - xRemainder
+  const xGenerated = xLevel * xBonus
 
   const historyEntries = useMemo(
     () =>
@@ -140,6 +148,7 @@ export function EmployeeProfilePage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Ventas" value={formatCurrency(employee.sales)} trend="Registradas" accent="emerald" />
         <StatCard label="Stock con empleado" value={String(totalAssignedUnits)} trend={`${totalProductsAssigned} productos asignados`} accent="sky" />
+        <StatCard label="Sistema X" value={`X${xLevel}`} trend={xLevel > 0 ? formatCurrency(xGenerated) : 'Sin comisión aún'} accent="violet" />
         <StatCard label="Deuda" value={formatCurrency(employee.debt)} trend="Pendiente" accent="amber" />
         <StatCard label="Total pagado" value={formatCurrency(employee.payments)} trend="Pago acumulado" accent="violet" />
       </div>
@@ -188,6 +197,20 @@ export function EmployeeProfilePage() {
                 <div className="flex justify-between gap-3"><span>Unidades disponibles</span><span>{totalAssignedUnits}</span></div>
                 <div className="flex justify-between gap-3"><span>Productos distintos</span><span>{totalProductsAssigned}</span></div>
                 <div className="flex justify-between gap-3"><span>Ventas registradas</span><span>{employeeSales.length}</span></div>
+              </div>
+            </div>
+            <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5">
+              <div className="flex items-center gap-3">
+                <Boxes className="h-5 w-5 text-sky-300" />
+                <p className="font-medium text-white">Sistema X</p>
+              </div>
+              <div className="mt-4 space-y-3 text-sm text-slate-300">
+                <div className="flex justify-between gap-3"><span>X alcanzado</span><span>X{xLevel}</span></div>
+                <div className="flex justify-between gap-3"><span>Comisión generada</span><span>{formatCurrency(xGenerated)}</span></div>
+                <div className="flex justify-between gap-3"><span>Siguiente X</span><span>{formatCurrency(nextXRemaining)}</span></div>
+              </div>
+              <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-sky-300" style={{ width: `${Math.max(xProgress * 100, 4)}%` }} />
               </div>
             </div>
           </div>

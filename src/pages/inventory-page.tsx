@@ -18,12 +18,29 @@ const defaultForm = {
   user: 'Administrador',
 }
 
+const defaultTransferForm = {
+  employeeId: '',
+  productId: '',
+  quantity: '1',
+  notes: '',
+}
+
 export function InventoryPage() {
-  const { products, inventoryMovements, addInventoryMovement, addActivity } = useAppData()
+  const { products, employees, employeeStocks, inventoryMovements, assignEmployeeStock, addInventoryMovement, addActivity } = useAppData()
   const { notifySuccess, notifyError } = useFeedback()
   const [form, setForm] = useState(defaultForm)
+  const [transferForm, setTransferForm] = useState(defaultTransferForm)
 
   const lowStockCount = useMemo(() => products.filter((product) => product.stock <= product.minimumStock).length, [products])
+  const assignedUnits = useMemo(() => employeeStocks.reduce((sum, item) => sum + item.quantity, 0), [employeeStocks])
+  const employeeStockSummary = useMemo(
+    () =>
+      employees.map((employee) => ({
+        employee,
+        stocks: employeeStocks.filter((item) => item.employeeId === employee.id),
+      })),
+    [employees, employeeStocks],
+  )
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -57,6 +74,47 @@ export function InventoryPage() {
     notifySuccess('Movimiento guardado', `${form.type} aplicada a ${product.name} correctamente.`)
   }
 
+  function handleTransferSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!transferForm.employeeId || !transferForm.productId || Number(transferForm.quantity) <= 0) {
+      notifyError('Surtido incompleto', 'Selecciona empleado, producto y cantidad válida.')
+      return
+    }
+
+    const employee = employees.find((item) => item.id === transferForm.employeeId)
+    const product = products.find((item) => item.id === transferForm.productId)
+
+    if (!employee || !product) {
+      notifyError('Datos no disponibles', 'Selecciona nuevamente el empleado o producto.')
+      return
+    }
+
+    const errorMessage = assignEmployeeStock({
+      employeeId: employee.id,
+      productId: product.id,
+      quantity: Number(transferForm.quantity),
+      notes: transferForm.notes.trim(),
+      user: 'Administrador',
+    })
+
+    if (errorMessage) {
+      notifyError('No se pudo surtir', errorMessage)
+      return
+    }
+
+    addActivity({
+      user: 'Administrador',
+      action: 'Se surtió mercancía a un repartidor',
+      module: 'Inventario',
+      record: `${employee.name} · ${product.name} (${transferForm.quantity})`,
+      createdAt: new Date().toISOString(),
+    })
+
+    setTransferForm(defaultTransferForm)
+    notifySuccess('Surtido realizado', `${employee.name} recibió ${transferForm.quantity} unidad(es) de ${product.name}.`)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -72,9 +130,10 @@ export function InventoryPage() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Productos en stock" value={String(products.length)} trend="En catálogo" accent="sky" />
-        <StatCard label="Unidades disponibles" value={String(products.reduce((sum, product) => sum + product.stock, 0))} trend="Total en existencia" accent="emerald" />
+        <StatCard label="Unidades centrales" value={String(products.reduce((sum, product) => sum + product.stock, 0))} trend="En bodega" accent="emerald" />
+        <StatCard label="Unidades en repartidores" value={String(assignedUnits)} trend="En carritos" accent="violet" />
         <StatCard label="Bajo stock" value={String(lowStockCount)} trend="Requieren revisión" accent="amber" />
       </div>
 
@@ -141,6 +200,95 @@ export function InventoryPage() {
               </div>
             </div>
           </div>
+        </SectionCard>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <SectionCard title="Surtir a repartidor" description="Transfiere mercancía desde bodega al carrito del repartidor.">
+          <form onSubmit={handleTransferSubmit} className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Repartidor</label>
+              <select
+                value={transferForm.employeeId}
+                onChange={(event) => setTransferForm((current) => ({ ...current, employeeId: event.target.value, productId: '' }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+              >
+                <option value="">Selecciona repartidor</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>{employee.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Producto</label>
+              <select
+                value={transferForm.productId}
+                onChange={(event) => setTransferForm((current) => ({ ...current, productId: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+              >
+                <option value="">{transferForm.employeeId ? 'Selecciona producto de bodega' : 'Selecciona primero repartidor'}</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} · bodega {product.stock}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Cantidad</label>
+              <input
+                type="number"
+                min="1"
+                value={transferForm.quantity}
+                onChange={(event) => setTransferForm((current) => ({ ...current, quantity: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
+              <input
+                value={transferForm.notes}
+                onChange={(event) => setTransferForm((current) => ({ ...current, notes: event.target.value }))}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                placeholder="Surtido, reposición o entrega"
+              />
+            </div>
+            <div className="md:col-span-2 flex justify-end">
+              <Button type="submit">Asignar mercancía</Button>
+            </div>
+          </form>
+        </SectionCard>
+
+        <SectionCard title="Stock por repartidor" description="Así se ve la mercancía que cada repartidor trae consigo.">
+          {employeeStockSummary.length === 0 || employeeStockSummary.every((item) => item.stocks.length === 0) ? (
+            <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-300">
+              No hay stock asignado a repartidores todavía.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {employeeStockSummary.map(({ employee, stocks }) =>
+                stocks.length === 0 ? null : (
+                  <div key={employee.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{employee.name}</p>
+                        <p className="mt-1 text-sm text-slate-400">{stocks.length} producto(s) · {stocks.reduce((sum, item) => sum + item.quantity, 0)} unidad(es)</p>
+                      </div>
+                      <StatusBadge label="Activo" tone={employee.status === 'Activo' ? 'success' : 'neutral'} />
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      {stocks.map((stock) => (
+                        <div key={stock.id} className="flex items-center justify-between rounded-2xl bg-slate-950/70 px-4 py-3 text-sm">
+                          <span className="text-slate-200">{stock.productName}</span>
+                          <span className="font-medium text-white">{stock.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </SectionCard>
       </div>
 

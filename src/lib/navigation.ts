@@ -1,5 +1,6 @@
 import {
   ChartColumnIncreasing,
+  ClipboardCheck,
   CreditCard,
   Gauge,
   Layers3,
@@ -43,6 +44,12 @@ export const navigationItems = [
     icon: ShoppingBag,
   },
   {
+    path: '/cuts',
+    label: 'Cortes',
+    description: 'Cierres y comisiones',
+    icon: ClipboardCheck,
+  },
+  {
     path: '/finance',
     label: 'Deudas / Ahorros',
     description: 'Movimientos y saldos',
@@ -80,6 +87,7 @@ export const routeTitles: Record<string, string> = {
   '/products': 'Productos',
   '/inventory': 'Inventario',
   '/sales': 'Ventas',
+  '/cuts': 'Cortes',
   '/finance': 'Deudas y ahorros',
   '/payments': 'Pagos',
   '/reports': 'Reportes',

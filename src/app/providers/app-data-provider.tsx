@@ -7,9 +7,13 @@ import {
   saveAppData,
   type ActivityItem,
   type AppData,
+  type AppSettings,
   type Employee,
   type EmployeeStock,
   type EmployeeStockMovement,
+  type EmployeeCut,
+  type Expense,
+  type ExpenseStatus,
   type FinanceMovement,
   type InventoryMovement,
   type Payment,
@@ -19,11 +23,14 @@ import {
 
 interface AppDataContextValue {
   data: AppData
+  settings: AppSettings
   employees: Employee[]
   products: Product[]
   inventoryMovements: InventoryMovement[]
   employeeStocks: EmployeeStock[]
   employeeStockMovements: EmployeeStockMovement[]
+  cuts: EmployeeCut[]
+  expenses: Expense[]
   sales: Sale[]
   payments: Payment[]
   financeMovements: FinanceMovement[]
@@ -45,9 +52,13 @@ interface AppDataContextValue {
   assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => string | null
   adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => string | null
   addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => string | null
+  closeCut: (cut: Omit<EmployeeCut, 'id' | 'createdAt'> & { createdAt?: string }) => string | null
+  addExpense: (expense: Omit<Expense, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'approvedBy'> & { status?: ExpenseStatus }) => string | null
+  updateExpenseStatus: (expenseId: string, status: ExpenseStatus, approvedBy: string) => string | null
   addPayment: (payment: Omit<Payment, 'id'>) => void
   addFinanceMovement: (movement: Omit<FinanceMovement, 'id'>) => void
   addActivity: (activity: Omit<ActivityItem, 'id'>) => void
+  updateSettings: (updates: Partial<AppSettings>) => void
   addUser: (user: Omit<import('../../lib/app-data.ts').AppUser, 'id' | 'lastLogin'> & { lastLogin?: string }) => void
   resetAll: () => void
   totals: {
@@ -55,6 +66,8 @@ interface AppDataContextValue {
     totalProducts: number
     availableInventory: number
     salesToday: number
+    salesWeek: number
+    salesMonth: number
     debtSum: number
     savingsSum: number
     paymentsTotal: number
@@ -87,7 +100,21 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     const totalProducts = products.length
     const availableInventory = products.reduce((sum, item) => sum + item.stock, 0)
     const activeEmployees = employees.filter((employee) => employee.status === 'Activo').length
-    const salesToday = sales.reduce((sum, sale) => sum + sale.total, 0)
+    const todayKey = new Date().toISOString().slice(0, 10)
+    const monthKey = todayKey.slice(0, 7)
+    const weekStart = new Date()
+    weekStart.setHours(0, 0, 0, 0)
+    weekStart.setDate(weekStart.getDate() - 6)
+    const weekStartTime = weekStart.getTime()
+    const salesToday = sales
+      .filter((sale) => sale.createdAt.slice(0, 10) === todayKey)
+      .reduce((sum, sale) => sum + sale.total, 0)
+    const salesWeek = sales
+      .filter((sale) => new Date(sale.createdAt).getTime() >= weekStartTime)
+      .reduce((sum, sale) => sum + sale.total, 0)
+    const salesMonth = sales
+      .filter((sale) => sale.createdAt.slice(0, 7) === monthKey)
+      .reduce((sum, sale) => sum + sale.total, 0)
     const debtSum = employees.reduce((sum, employee) => sum + employee.debt, 0) + financeMovements
       .filter((movement) => movement.type === 'Deuda' || movement.type === 'Ajuste')
       .reduce((sum, movement) => sum + movement.amount, 0)
@@ -101,6 +128,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       totalProducts,
       availableInventory,
       salesToday,
+      salesWeek,
+      salesMonth,
       debtSum,
       savingsSum,
       paymentsTotal,
@@ -109,11 +138,14 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<AppDataContextValue>(() => ({
     data,
+    settings: data.settings,
     employees: data.employees,
     products: data.products,
     inventoryMovements: data.inventoryMovements,
     employeeStocks: data.employeeStocks,
     employeeStockMovements: data.employeeStockMovements,
+    cuts: data.cuts,
+    expenses: data.expenses,
     sales: data.sales,
     payments: data.payments,
     financeMovements: data.financeMovements,
@@ -627,6 +659,136 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
       return errorMessage
     },
+    closeCut: (cut) => {
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const employee = current.employees.find((item) => item.id === cut.employeeId)
+        if (!employee) {
+          errorMessage = 'El empleado seleccionado ya no está disponible.'
+          return current
+        }
+
+        const lastCut = [...current.cuts]
+          .filter((item) => item.employeeId === employee.id)
+          .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0]
+        const since = lastCut ? new Date(lastCut.createdAt).getTime() : 0
+        const periodSales = current.sales.filter(
+          (sale) => sale.employeeId === employee.id && new Date(sale.createdAt).getTime() > since,
+        )
+        const salesTotal = periodSales.reduce((sum, sale) => sum + sale.total, 0)
+        const periodExpenses = current.expenses.filter(
+          (expense) =>
+            expense.employeeId === employee.id &&
+            expense.status === 'Aprobado' &&
+            new Date(expense.createdAt).getTime() > since,
+        )
+        const expensesTotal = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+        const xRuleAmount = current.settings.commissionRuleAmount > 0 ? current.settings.commissionRuleAmount : 4000
+        const xBonusAmount = current.settings.commissionRuleBonus > 0 ? current.settings.commissionRuleBonus : 500
+        const xLevel = Math.floor(salesTotal / xRuleAmount)
+        const commission = xLevel * xBonusAmount
+        const employeeStocks = current.employeeStocks.filter((item) => item.employeeId === employee.id)
+        const assignedUnits = employeeStocks.reduce((sum, item) => sum + item.totalAssigned, 0)
+        const soldUnits = employeeStocks.reduce((sum, item) => sum + item.totalSold, 0)
+        const remainingUnits = employeeStocks.reduce((sum, item) => sum + item.quantity, 0)
+        const nextCut: EmployeeCut = {
+          id: createId('cut'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          closedBy: cut.closedBy,
+          createdAt: cut.createdAt ?? new Date().toISOString(),
+          salesTotal,
+          xLevel,
+          commission,
+          assignedUnits,
+          soldUnits,
+          remainingUnits,
+          debt: employee.debt,
+          savings: employee.savings,
+          payments: employee.payments,
+          expenses: expensesTotal,
+          net: commission - expensesTotal - employee.debt,
+          notes: cut.notes?.trim(),
+        }
+
+        return {
+          ...current,
+          cuts: [nextCut, ...current.cuts],
+        } satisfies AppData
+      })
+
+      return errorMessage
+    },
+    addExpense: (expense) => {
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const employee = current.employees.find((item) => item.id === expense.employeeId)
+        if (!employee) {
+          errorMessage = 'El empleado seleccionado ya no está disponible.'
+          return current
+        }
+
+        if (expense.amount <= 0) {
+          errorMessage = 'El gasto debe ser mayor a cero.'
+          return current
+        }
+
+        const now = new Date().toISOString()
+        const monthKey = now.slice(0, 7)
+        const approvedThisMonth = current.expenses.filter(
+          (item) =>
+            item.employeeId === employee.id &&
+            item.status === 'Aprobado' &&
+            item.createdAt.slice(0, 7) === monthKey,
+        ).reduce((sum, item) => sum + item.amount, 0)
+        const limit = current.settings.expenseMonthlyLimit > 0 ? current.settings.expenseMonthlyLimit : 400
+        const autoStatus: ExpenseStatus =
+          expense.status ?? (approvedThisMonth + expense.amount > limit ? 'Pendiente' : 'Aprobado')
+
+        const nextExpense: Expense = {
+          id: createId('expense'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          concept: expense.concept.trim() || 'Sin concepto',
+          amount: expense.amount,
+          status: autoStatus,
+          admin: expense.admin,
+          createdAt: now,
+          notes: expense.notes?.trim(),
+        }
+
+        return {
+          ...current,
+          expenses: [nextExpense, ...current.expenses],
+        } satisfies AppData
+      })
+
+      return errorMessage
+    },
+    updateExpenseStatus: (expenseId, status, approvedBy) => {
+      let errorMessage: string | null = null
+
+      setData((current) => {
+        const expense = current.expenses.find((item) => item.id === expenseId)
+        if (!expense) {
+          errorMessage = 'El gasto seleccionado ya no está disponible.'
+          return current
+        }
+
+        return {
+          ...current,
+          expenses: current.expenses.map((item) =>
+            item.id === expenseId
+              ? { ...item, status, approvedBy, updatedAt: new Date().toISOString() }
+              : item,
+          ),
+        } satisfies AppData
+      })
+
+      return errorMessage
+    },
     addPayment: (payment) => {
       setData((current) => {
         const nextPayment: Payment = {
@@ -673,6 +835,15 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       }) satisfies AppData)
     },
     addActivity: addActivity,
+    updateSettings: (updates) => {
+      setData((current) => ({
+        ...current,
+        settings: {
+          ...current.settings,
+          ...updates,
+        },
+      }))
+    },
     addUser: (user) => {
       setData((current) => ({
         ...current,

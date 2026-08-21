@@ -11,6 +11,7 @@ import { LoginPage } from '../../pages/login-page.tsx'
 import { NotFoundPage } from '../../pages/not-found-page.tsx'
 import { PaymentsPage } from '../../pages/payments-page.tsx'
 import { ProductsPage } from '../../pages/products-page.tsx'
+import { CutsPage } from '../../pages/cuts-page.tsx'
 import { ReportsPage } from '../../pages/reports-page.tsx'
 import { SalesPage } from '../../pages/sales-page.tsx'
 import { SettingsPage } from '../../pages/settings-page.tsx'
@@ -32,6 +33,7 @@ export function AppRouter() {
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/sales" element={<SalesPage />} />
+          <Route path="/cuts" element={<CutsPage />} />
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/reports" element={<ReportsPage />} />

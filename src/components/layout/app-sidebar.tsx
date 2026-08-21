@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useAppData } from '../../app/providers/app-data-provider.tsx'
 import { useAuth } from '../../app/providers/auth-provider.tsx'
 import { navigationItems } from '../../lib/navigation.ts'
 import { Button } from '../ui/button.tsx'
@@ -21,6 +22,7 @@ function isActivePath(currentPath: string, itemPath: string) {
 export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
   const navigate = useNavigate()
   const { role, signOut, user } = useAuth()
+  const { settings } = useAppData()
 
   async function handleSignOut() {
     const errorMessage = await signOut()
@@ -42,7 +44,7 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-300">
                 Private Admin
               </p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Doble PP Company</h2>
+              <h2 className="mt-1 text-lg font-semibold text-white">{settings.companyName}</h2>
             </div>
           </div>
         </div>
