@@ -1,6 +1,7 @@
 import { Calculator, CreditCard, Receipt } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
+import { useAuth } from '../app/providers/auth-provider.tsx'
 import { useFeedback } from '../app/providers/feedback-provider.tsx'
 import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
@@ -17,8 +18,21 @@ const defaultForm = {
 
 export function SalesPage() {
   const { employees, products, employeeStocks, sales, addSale, addActivity } = useAppData()
+  const { role, user } = useAuth()
   const { notifySuccess, notifyError } = useFeedback()
   const [form, setForm] = useState(defaultForm)
+
+  const sellerEmployeeId = role === 'seller' ? user?.employeeId : undefined
+  const employeeOptions = useMemo(
+   () => (sellerEmployeeId ? employees.filter((employee) => employee.id === sellerEmployeeId) : employees),
+   [employees, sellerEmployeeId],
+  )
+
+  useEffect(() => {
+   if (sellerEmployeeId) {
+     setForm((current) => ({ ...current, employeeId: sellerEmployeeId, productId: '' }))
+   }
+  }, [sellerEmployeeId])
 
   const selectedEmployee = useMemo(
    () => employees.find((employee) => employee.id === form.employeeId),
@@ -132,9 +146,10 @@ export function SalesPage() {
                 value={form.employeeId}
                 onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value, productId: '' }))}
                 className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+                disabled={role === 'seller'}
               >
                 <option value="">Selecciona empleado</option>
-                {employees.map((employee) => (
+                {employeeOptions.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employee.name}</option>
                 ))}
               </select>

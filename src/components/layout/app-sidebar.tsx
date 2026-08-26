@@ -19,6 +19,22 @@ function isActivePath(currentPath: string, itemPath: string) {
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
 }
 
+function canSeeItem(itemAudience: 'all' | 'admin', role: string) {
+  return itemAudience === 'all' || role === 'administrator'
+}
+
+function sectionLabel(section: string) {
+  if (section === 'admin') {
+    return 'Sección administrador'
+  }
+
+  if (section === 'operacion') {
+    return 'Sección operativa'
+  }
+
+  return 'General'
+}
+
 export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
   const navigate = useNavigate()
   const { role, signOut, user } = useAuth()
@@ -49,36 +65,53 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
-          {navigationItems.map((item) => {
-            const active = isActivePath(currentPath, item.path)
+        <nav className="flex-1 space-y-5 overflow-y-auto px-4 py-5">
+          {(['general', 'operacion', 'admin'] as const).map((section) => {
+            const sectionItems = navigationItems.filter(
+              (item) => item.section === section && canSeeItem(item.audience, role),
+            )
+
+            if (sectionItems.length === 0) {
+              return null
+            }
 
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={[
-                  'group flex items-center gap-3 rounded-2xl border px-4 py-3 transition',
-                  active
-                    ? 'border-sky-400/40 bg-sky-400/10 text-white shadow-lg shadow-sky-900/10'
-                    : 'border-transparent bg-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
-                ].join(' ')}
-              >
-                <div
-                  className={[
-                    'flex h-10 w-10 items-center justify-center rounded-xl transition',
-                    active
-                      ? 'bg-sky-300/20 text-sky-200'
-                      : 'bg-white/5 text-slate-400 group-hover:bg-white/10 group-hover:text-slate-100',
-                  ].join(' ')}
-                >
-                  <item.icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{item.label}</p>
-                  <p className="truncate text-xs text-slate-400">{item.description}</p>
-                </div>
-              </NavLink>
+              <div key={section} className="space-y-2">
+                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.32em] text-slate-500">
+                  {sectionLabel(section)}
+                </p>
+                {sectionItems.map((item) => {
+                  const active = isActivePath(currentPath, item.path)
+
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      className={[
+                        'group flex items-center gap-3 rounded-2xl border px-4 py-3 transition',
+                        active
+                          ? 'border-sky-400/40 bg-sky-400/10 text-white shadow-lg shadow-sky-900/10'
+                          : 'border-transparent bg-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
+                      ].join(' ')}
+                    >
+                      <div
+                        className={[
+                          'flex h-10 w-10 items-center justify-center rounded-xl transition',
+                          active
+                            ? 'bg-sky-300/20 text-sky-200'
+                            : 'bg-white/5 text-slate-400 group-hover:bg-white/10 group-hover:text-slate-100',
+                        ].join(' ')}
+                      >
+                        <item.icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{item.label}</p>
+                        <p className="truncate text-xs text-slate-400">{item.description}</p>
+                      </div>
+                    </NavLink>
+                  )
+                })}
+              </div>
             )
           })}
         </nav>
@@ -120,7 +153,7 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
             </div>
 
             <nav className="space-y-2">
-              {navigationItems.map((item) => {
+              {navigationItems.filter((item) => canSeeItem(item.audience, role)).map((item) => {
                 const active = isActivePath(currentPath, item.path)
 
                 return (

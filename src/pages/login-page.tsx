@@ -2,7 +2,7 @@ import { Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
-import { useAuth } from '../app/providers/auth-provider.tsx'
+import { getDefaultRouteForRole, useAuth } from '../app/providers/auth-provider.tsx'
 import { Button } from '../components/ui/button.tsx'
 
 function normalizeAuthError(errorMessage: string) {
@@ -43,16 +43,16 @@ export function LoginPage() {
     setErrorMessage(null)
     setIsSubmitting(true)
 
-    const responseError = await signIn(normalizedEmail, password)
+    const response = await signIn(normalizedEmail, password)
 
-    if (responseError) {
-      setErrorMessage(normalizeAuthError(responseError))
+    if (response.error) {
+      setErrorMessage(normalizeAuthError(response.error))
       setIsSubmitting(false)
       return
     }
 
     setIsSubmitting(false)
-    navigate(redirectTo, { replace: true })
+    navigate(response.redirectTo || redirectTo || getDefaultRouteForRole('administrator'), { replace: true })
   }
 
   return (

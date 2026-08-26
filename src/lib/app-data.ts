@@ -1,7 +1,9 @@
 export type EmployeeStatus = 'Activo' | 'Inactivo' | 'Vacaciones'
 export type ProductStatus = 'Activo' | 'Bajo stock' | 'Inactivo'
+export type VehicleStatus = 'Disponible' | 'Asignado' | 'Mantenimiento' | 'Fuera de servicio'
+export type VehicleMovementType = 'Asignación' | 'Liberación' | 'Uso' | 'Combustible' | 'Mantenimiento' | 'Ajuste'
 
-export type RoleName = 'administrator' | 'supervisor'
+export type RoleName = 'administrator' | 'supervisor' | 'employee' | 'seller'
 
 export interface AppSettings {
   companyName: string
@@ -99,6 +101,33 @@ export interface EmployeeCut {
   notes?: string
 }
 
+export interface Vehicle {
+  id: string
+  name: string
+  plate: string
+  model: string
+  year: number
+  type: string
+  mileage: number
+  fuelLevel: number
+  status: VehicleStatus
+  assignedEmployeeId?: string
+  assignedEmployeeName?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface VehicleMovement {
+  id: string
+  vehicleId: string
+  vehicleName: string
+  type: VehicleMovementType
+  user: string
+  notes: string
+  createdAt: string
+}
+
 export type ExpenseStatus = 'Pendiente' | 'Aprobado' | 'Rechazado'
 
 export interface Expense {
@@ -158,6 +187,8 @@ export interface AppUser {
   email: string
   role: RoleName
   status: 'Activo' | 'Inactivo'
+  password?: string
+  employeeId?: string
   lastLogin?: string
 }
 
@@ -174,6 +205,8 @@ export interface AppData {
   settings: AppSettings
   employees: Employee[]
   products: Product[]
+  vehicles: Vehicle[]
+  vehicleMovements: VehicleMovement[]
   inventoryMovements: InventoryMovement[]
   employeeStocks: EmployeeStock[]
   employeeStockMovements: EmployeeStockMovement[]
@@ -240,6 +273,8 @@ export function getDefaultAppData(): AppData {
     },
     employees: [],
     products: [],
+    vehicles: [],
+    vehicleMovements: [],
     inventoryMovements: [],
     employeeStocks: [],
     employeeStockMovements: [],
@@ -319,6 +354,8 @@ export function loadAppData(): AppData {
       },
       employees: parsed.employees ?? [],
       products: parsed.products ?? [],
+      vehicles: parsed.vehicles ?? [],
+      vehicleMovements: parsed.vehicleMovements ?? [],
       inventoryMovements: parsed.inventoryMovements ?? [],
       employeeStocks: parsed.employeeStocks ?? [],
       employeeStockMovements: parsed.employeeStockMovements ?? [],

@@ -1,6 +1,7 @@
-import { ArrowUpRight, Bell, BriefcaseBusiness, PackagePlus, Plus, ReceiptText } from 'lucide-react'
+import { ArrowUpRight, Bell, BriefcaseBusiness, PackagePlus, ReceiptText, UserRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
+import { useAuth } from '../app/providers/auth-provider.tsx'
 import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
@@ -10,13 +11,15 @@ import { formatCurrency } from '../lib/app-data.ts'
 import { navigationItems } from '../lib/navigation.ts'
 
 export function DashboardPage() {
-  const { activity, totals, employees, products } = useAppData()
+  const { activity, totals, employees, products, settings } = useAppData()
+  const { role } = useAuth()
 
   const summaryCards = [
     { label: 'Empleados activos', value: String(totals.activeEmployees), trend: 'Activos en operación', accent: 'sky' as const, badge: 'Activos' },
+    { label: 'Vehículos activos', value: String(totals.vehiclesAvailable + totals.vehiclesAssigned), trend: `${totals.vehiclesMaintenance} en mantenimiento`, accent: 'violet' as const, badge: 'Flotilla' },
     { label: 'Ventas hoy', value: formatCurrency(totals.salesToday), trend: 'Registradas en el día', accent: 'emerald' as const, badge: 'Hoy' },
-    { label: 'Ventas semana', value: formatCurrency(totals.salesWeek), trend: 'Últimos 7 días', accent: 'violet' as const, badge: 'Semana' },
-    { label: 'Ventas mes', value: formatCurrency(totals.salesMonth), trend: 'Mes actual', accent: 'amber' as const, badge: 'Mes' },
+    { label: 'Sistema X', value: `X${settings.commissionRuleAmount.toLocaleString('es-MX')}`, trend: `${formatCurrency(settings.commissionRuleBonus)} por X`, accent: 'amber' as const, badge: 'Comisión' },
+    { label: 'Ventas mes', value: formatCurrency(totals.salesMonth), trend: 'Mes actual', accent: 'rose' as const, badge: 'Mes' },
   ]
 
   return (
@@ -32,24 +35,43 @@ export function DashboardPage() {
                 Ver actividad
               </Button>
             </a>
-            <Link to="/employees" className="inline-flex">
-              <Button>
-                <BriefcaseBusiness className="h-4 w-4" />
-                Empleados
-              </Button>
-            </Link>
-            <Link to="/products" className="inline-flex">
-              <Button variant="secondary">
-                <PackagePlus className="h-4 w-4" />
-                Productos
-              </Button>
-            </Link>
-            <Link to="/sales" className="inline-flex">
-              <Button>
-                <ReceiptText className="h-4 w-4" />
-                Registrar venta
-              </Button>
-            </Link>
+            {role === 'administrator' ? (
+              <>
+                <Link to="/admin" className="inline-flex">
+                  <Button>
+                    <UserRound className="h-4 w-4" />
+                    Centro admin
+                  </Button>
+                </Link>
+                <Link to="/employees" className="inline-flex">
+                  <Button>
+                    <BriefcaseBusiness className="h-4 w-4" />
+                    Empleados
+                  </Button>
+                </Link>
+                <Link to="/products" className="inline-flex">
+                  <Button variant="secondary">
+                    <PackagePlus className="h-4 w-4" />
+                    Productos
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/my-space" className="inline-flex">
+                  <Button>
+                    <UserRound className="h-4 w-4" />
+                    Mi espacio
+                  </Button>
+                </Link>
+                <Link to="/sales" className="inline-flex">
+                  <Button>
+                    <ReceiptText className="h-4 w-4" />
+                    Registrar venta
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         }
       />
@@ -66,7 +88,10 @@ export function DashboardPage() {
           description="Acceso rápido a cada módulo del sistema administrativo."
         >
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-            {navigationItems.slice(1, 9).map((item) => (
+            {navigationItems
+              .filter((item) => (role === 'administrator' ? item.path !== '/dashboard' : item.audience === 'all'))
+              .filter((item) => item.path !== '/dashboard' && item.path !== '/my-space')
+              .map((item) => (
               <article key={item.path} className="rounded-[24px] border border-white/10 bg-white/5 p-5 transition hover:border-sky-400/30 hover:bg-sky-400/5">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950/70 text-sky-200">
                   <item.icon className="h-6 w-6" />
@@ -168,7 +193,7 @@ export function DashboardPage() {
           actions={
             <Link to="/employees" className="inline-flex">
               <Button size="sm" variant="secondary">
-                <Plus className="h-4 w-4" />
+                <BriefcaseBusiness className="h-4 w-4" />
                 Comenzar
               </Button>
             </Link>

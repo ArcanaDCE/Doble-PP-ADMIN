@@ -1,9 +1,8 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { useAuth } from '../../app/providers/auth-provider.tsx'
+import { Navigate, Outlet } from 'react-router-dom'
+import { getDefaultRouteForRole, useAuth } from '../../app/providers/auth-provider.tsx'
 import { AuthScreen } from './auth-screen.tsx'
 
 export function PublicOnlyRoute() {
-  const location = useLocation()
   const { isLoading, session } = useAuth()
 
   if (isLoading) {
@@ -16,10 +15,7 @@ export function PublicOnlyRoute() {
   }
 
   if (session) {
-    const state = location.state as { from?: { pathname?: string } } | null
-    const redirectTo = state?.from?.pathname ?? '/dashboard'
-
-    return <Navigate to={redirectTo} replace />
+    return <Navigate to={getDefaultRouteForRole(session.user.role)} replace />
   }
 
   return <Outlet />

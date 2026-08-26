@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
+import { useAuth } from '../app/providers/auth-provider.tsx'
 import { useFeedback } from '../app/providers/feedback-provider.tsx'
 import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
@@ -28,6 +29,7 @@ const defaultExpenseForm = {
 
 export function FinancePage() {
   const { employees, financeMovements, expenses, settings, addFinanceMovement, addExpense, updateExpenseStatus, addActivity } = useAppData()
+  const { role, user } = useAuth()
   const { notifySuccess, notifyError } = useFeedback()
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -36,6 +38,19 @@ export function FinancePage() {
   const [form, setForm] = useState(defaultForm)
   const [expenseForm, setExpenseForm] = useState(defaultExpenseForm)
   const [expenseFilter, setExpenseFilter] = useState('all')
+
+  const sellerEmployeeId = role === 'seller' ? user?.employeeId : undefined
+  const employeeOptions = sellerEmployeeId
+    ? employees.filter((employee) => employee.id === sellerEmployeeId)
+    : employees
+
+  useEffect(() => {
+    if (sellerEmployeeId) {
+      setEmployeeFilter(sellerEmployeeId)
+      setForm((current) => ({ ...current, employeeId: sellerEmployeeId }))
+      setExpenseForm((current) => ({ ...current, employeeId: sellerEmployeeId }))
+    }
+  }, [sellerEmployeeId])
 
   const filteredMovements = useMemo(() => {
     return financeMovements.filter((row) => {
@@ -181,9 +196,9 @@ export function FinancePage() {
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-300">Empleado</label>
-            <select value={form.employeeId} onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
+            <select value={form.employeeId} onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none" disabled={role === 'seller'}>
               <option value="">Selecciona</option>
-              {employees.map((employee) => (
+              {employeeOptions.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.name}</option>
               ))}
             </select>
@@ -222,9 +237,10 @@ export function FinancePage() {
               value={expenseForm.employeeId}
               onChange={(event) => setExpenseForm((current) => ({ ...current, employeeId: event.target.value }))}
               className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+              disabled={role === 'seller'}
             >
               <option value="">Selecciona</option>
-              {employees.map((employee) => (
+              {employeeOptions.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.name}</option>
               ))}
             </select>
@@ -332,9 +348,9 @@ export function FinancePage() {
         <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <input value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none" type="date" />
           <input value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none" type="date" />
-          <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
+          <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none" disabled={role === 'seller'}>
             <option value="all">Todos los empleados</option>
-            {employees.map((employee) => (
+            {employeeOptions.map((employee) => (
               <option key={employee.id} value={employee.id}>{employee.name}</option>
             ))}
           </select>

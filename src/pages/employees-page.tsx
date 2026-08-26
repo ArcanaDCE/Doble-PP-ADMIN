@@ -1,4 +1,4 @@
-import { Boxes, Eye, Filter, Plus, Search, Trash2 } from 'lucide-react'
+import { Boxes, Eye, Filter, Plus, Search, Shield, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
@@ -17,6 +17,9 @@ function createDefaultForm() {
     status: 'Activo' as const,
     hiredAt: new Date().toISOString().slice(0, 10),
     notes: '',
+    accessRole: 'seller' as 'administrator' | 'supervisor' | 'seller' | 'employee' | 'none',
+    accessEmail: '',
+    accessPassword: '',
   }
 }
 
@@ -37,7 +40,7 @@ function createInitialStockRow() {
 }
 
 export function EmployeesPage() {
-  const { employees, products, employeeStocks, addEmployee, updateEmployee, deleteEmployee, adjustEmployeeStock, addActivity } = useAppData()
+  const { employees, products, employeeStocks, data, addEmployee, updateEmployee, deleteEmployee, adjustEmployeeStock, addUser, updateUser, addActivity } = useAppData()
   const { notifySuccess, notifyError } = useFeedback()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -46,6 +49,9 @@ export function EmployeesPage() {
   const [initialStockRows, setInitialStockRows] = useState<Array<ReturnType<typeof createInitialStockRow>>>([])
   const [stockManagerEmployeeId, setStockManagerEmployeeId] = useState('')
   const [stockForm, setStockForm] = useState(defaultStockForm)
+  const [accessManageId, setAccessManageId] = useState('')
+  const [accessForm, setAccessForm] = useState({ role: 'seller' as 'administrator' | 'supervisor' | 'seller' | 'employee', email: '', password: '' })
+  const [showAccessPassword, setShowAccessPassword] = useState(false)
 
   function openEmployeeForm() {
     setForm(createDefaultForm())
@@ -131,6 +137,26 @@ export function EmployeesPage() {
     if (error || !employee) {
       notifyError('No se pudo guardar el empleado', error ?? 'Intenta nuevamente.')
       return
+    }
+
+    // Si se configuró acceso, crear usuario vinculado automáticamente
+    if (form.accessRole !== 'none' && form.accessEmail.trim() && form.accessPassword.trim()) {
+      const emailNormalized = form.accessEmail.trim().toLowerCase()
+      const alreadyExists = data.users.some((user) => user.email.toLowerCase() === emailNormalized)
+
+      if (alreadyExists) {
+        notifyError('Correo duplicado', `El correo ${emailNormalized} ya tiene acceso. Usa uno diferente.`)
+      } else {
+        addUser({
+          name: employee.name,
+          email: emailNormalized,
+          role: form.accessRole,
+          status: 'Activo',
+          password: form.accessPassword.trim(),
+          employeeId: employee.id,
+          lastLogin: undefined,
+        })
+      }
     }
 
     addActivity({
@@ -271,8 +297,62 @@ export function EmployeesPage() {
               <label className="mb-2 block text-sm font-medium text-slate-300">Notas</label>
               <textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} className="min-h-28 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none" placeholder="Notas del empleado" />
             </div>
-            <div className="md:col-span-2 rounded-[24px] border border-white/10 bg-white/5 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+
+            {/* Acceso de inicio de sesión */}
+            <div className="md:col-span-2 rounded-[24px] border border-amber-400/20 bg-amber-400/5 p-5">
+              <div className="mb-4 flex items-center gap-3">
+                <Shield className="h-5 w-5 text-amber-300" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Acceso al sistema</p>
+                  <p className="text-xs text-slate-400">Define si este empleado podrá iniciar sesión en la app y con qué rol.</p>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Rol de acceso</label>
+                  <select
+                    value={form.accessRole}
+                    onChange={(event) => setForm((current) => ({ ...current, accessRole: event.target.value as typeof form.accessRole }))}
+                    className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+                  >
+                    <option value="none">Sin acceso</option>
+                    <option value="seller">Vendedor</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="employee">Empleado</option>
+                    <option value="administrator">Administrador</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Correo de acceso</label>
+                  <input
+                    type="email"
+                    value={form.accessEmail}
+                    onChange={(event) => setForm((current) => ({ ...current, accessEmail: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                    placeholder="correo@empresa.com"
+                    disabled={form.accessRole === 'none'}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Contraseña</label>
+                  <input
+                    type="password"
+                    value={form.accessPassword}
+                    onChange={(event) => setForm((current) => ({ ...current, accessPassword: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                    placeholder="Contraseña temporal"
+                    disabled={form.accessRole === 'none'}
+                  />
+                </div>
+              </div>
+              {form.accessRole !== 'none' && (
+                <p className="mt-3 text-xs text-amber-200/80">
+                  Al guardar, se creará automáticamente un acceso con ese correo y contraseña vinculado a este empleado.
+                </p>
+              )}
+            </div>
+
+            <div className="md:col-span-2 rounded-[24px] border border-white/10 bg-white/5 p-4 sm:p-5">              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h4 className="text-base font-semibold text-white">Inventario inicial del empleado</h4>
                   <p className="mt-1 text-sm text-slate-400">
@@ -467,6 +547,15 @@ export function EmployeesPage() {
                         <p className="mt-1 text-xs text-slate-400">
                           {employeeStocks.filter((item) => item.employeeId === employee.id).length} productos · {employeeStocks.filter((item) => item.employeeId === employee.id).reduce((sum, item) => sum + item.quantity, 0)} unidades
                         </p>
+                        {(() => {
+                          const linkedUser = data.users.find((user) => user.employeeId === employee.id)
+                          if (!linkedUser) return null
+                          return (
+                            <p className="mt-1 text-xs text-sky-300">
+                              {linkedUser.email} · {linkedUser.role === 'seller' ? 'Vendedor' : linkedUser.role === 'supervisor' ? 'Supervisor' : linkedUser.role === 'administrator' ? 'Admin' : 'Empleado'}
+                            </p>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-300">{employee.position}</td>
                       <td className="px-4 py-4">
@@ -491,10 +580,29 @@ export function EmployeesPage() {
                             onClick={() => {
                               setStockManagerEmployeeId((current) => (current === employee.id ? '' : employee.id))
                               setStockForm(defaultStockForm)
+                              setAccessManageId('')
                             }}
                           >
                             <Boxes className="h-4 w-4" />
                             Stock
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              const linkedUser = data.users.find((user) => user.employeeId === employee.id)
+                              setAccessManageId((current) => (current === employee.id ? '' : employee.id))
+                              setAccessForm({
+                                role: (linkedUser?.role as 'administrator' | 'supervisor' | 'seller' | 'employee') ?? 'seller',
+                                email: linkedUser?.email ?? '',
+                                password: '',
+                              })
+                              setShowAccessPassword(false)
+                              setStockManagerEmployeeId('')
+                            }}
+                          >
+                            <Shield className="h-4 w-4" />
+                            Acceso
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             const nextStatus = employee.status === 'Activo' ? 'Inactivo' : 'Activo'
@@ -536,6 +644,122 @@ export function EmployeesPage() {
           </div>
         )}
       </SectionCard>
+
+      {accessManageId ? (() => {
+        const managedEmployee = employees.find((employee) => employee.id === accessManageId)
+        const linkedUser = data.users.find((user) => user.employeeId === accessManageId)
+        if (!managedEmployee) return null
+
+        return (
+          <SectionCard
+            title={`Acceso de ${managedEmployee.name}`}
+            description="Configura o actualiza las credenciales de inicio de sesión vinculadas a este empleado."
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Rol</label>
+                <select
+                  value={accessForm.role}
+                  onChange={(event) => setAccessForm((current) => ({ ...current, role: event.target.value as typeof accessForm.role }))}
+                  className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
+                >
+                  <option value="seller">Vendedor</option>
+                  <option value="supervisor">Supervisor</option>
+                  <option value="employee">Empleado</option>
+                  <option value="administrator">Administrador</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Correo de acceso</label>
+                <input
+                  type="email"
+                  value={accessForm.email}
+                  onChange={(event) => setAccessForm((current) => ({ ...current, email: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+                  placeholder="correo@empresa.com"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Contraseña</label>
+                <div className="relative">
+                  <input
+                    type={showAccessPassword ? 'text' : 'password'}
+                    value={accessForm.password}
+                    onChange={(event) => setAccessForm((current) => ({ ...current, password: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 pr-12 text-sm text-white outline-none"
+                    placeholder={linkedUser ? 'Nueva contraseña (opcional)' : 'Contraseña de acceso'}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                    onClick={() => setShowAccessPassword((v) => !v)}
+                  >
+                    {showAccessPassword ? '🙈' : '👁'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {linkedUser ? (
+              <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100">
+                Acceso actual: <strong>{linkedUser.email}</strong> · rol: <strong>{linkedUser.role === 'seller' ? 'Vendedor' : linkedUser.role === 'supervisor' ? 'Supervisor' : linkedUser.role === 'administrator' ? 'Administrador' : 'Empleado'}</strong>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+                Este empleado aún no tiene acceso al sistema. Completa los campos para crearlo.
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-3 justify-end">
+              <Button variant="secondary" onClick={() => setAccessManageId('')}>Cerrar</Button>
+              <Button onClick={() => {
+                if (!accessForm.email.trim()) {
+                  notifyError('Correo requerido', 'Escribe el correo de acceso del empleado.')
+                  return
+                }
+
+                if (!linkedUser && !accessForm.password.trim()) {
+                  notifyError('Contraseña requerida', 'Escribe la contraseña para crear el acceso.')
+                  return
+                }
+
+                const emailNormalized = accessForm.email.trim().toLowerCase()
+
+                if (linkedUser) {
+                  // Actualizar usuario existente
+                  updateUser(linkedUser.id, {
+                    email: emailNormalized,
+                    role: accessForm.role,
+                    ...(accessForm.password.trim() ? { password: accessForm.password.trim() } : {}),
+                  })
+                  notifySuccess('Acceso actualizado', `Las credenciales de ${managedEmployee.name} fueron actualizadas.`)
+                } else {
+                  // Verificar que no exista otro usuario con ese correo
+                  const alreadyExists = data.users.some((user) => user.email.toLowerCase() === emailNormalized)
+                  if (alreadyExists) {
+                    notifyError('Correo duplicado', `El correo ${emailNormalized} ya está siendo usado por otro usuario.`)
+                    return
+                  }
+
+                  addUser({
+                    name: managedEmployee.name,
+                    email: emailNormalized,
+                    role: accessForm.role,
+                    status: 'Activo',
+                    password: accessForm.password.trim(),
+                    employeeId: managedEmployee.id,
+                  })
+                  notifySuccess('Acceso creado', `${managedEmployee.name} ya puede iniciar sesión con ${emailNormalized}.`)
+                }
+
+                setAccessManageId('')
+              }}>
+                {linkedUser ? 'Actualizar acceso' : 'Crear acceso'}
+              </Button>
+            </div>
+          </SectionCard>
+        )
+      })() : null}
 
       {selectedStockEmployee ? (
         <SectionCard

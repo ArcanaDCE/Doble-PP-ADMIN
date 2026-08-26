@@ -19,6 +19,8 @@ import {
   type Payment,
   type Product,
   type Sale,
+  type Vehicle,
+  type VehicleMovement,
 } from '../../lib/app-data.ts'
 
 interface AppDataContextValue {
@@ -26,6 +28,8 @@ interface AppDataContextValue {
   settings: AppSettings
   employees: Employee[]
   products: Product[]
+  vehicles: Vehicle[]
+  vehicleMovements: VehicleMovement[]
   inventoryMovements: InventoryMovement[]
   employeeStocks: EmployeeStock[]
   employeeStockMovements: EmployeeStockMovement[]
@@ -48,6 +52,10 @@ interface AppDataContextValue {
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'status'> & { status?: Product['status'] }) => void
   updateProduct: (productId: string, updates: Partial<Product>) => void
   deleteProduct: (productId: string) => void
+  addVehicle: (vehicle: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }) => void
+  updateVehicle: (vehicleId: string, updates: Partial<Vehicle>) => void
+  deleteVehicle: (vehicleId: string) => void
+  addVehicleMovement: (movement: Omit<VehicleMovement, 'id' | 'createdAt'> & { createdAt?: string }) => void
   addInventoryMovement: (movement: { productId: string; productName: string; type: 'Entrada' | 'Salida' | 'Ajuste' | 'Devolución'; quantity: number; reason: string; user: string }) => void
   assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => string | null
   adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => string | null
@@ -60,11 +68,15 @@ interface AppDataContextValue {
   addActivity: (activity: Omit<ActivityItem, 'id'>) => void
   updateSettings: (updates: Partial<AppSettings>) => void
   addUser: (user: Omit<import('../../lib/app-data.ts').AppUser, 'id' | 'lastLogin'> & { lastLogin?: string }) => void
+  updateUser: (userId: string, updates: Partial<import('../../lib/app-data.ts').AppUser>) => void
   resetAll: () => void
   totals: {
     activeEmployees: number
     totalProducts: number
     availableInventory: number
+    vehiclesAvailable: number
+    vehiclesAssigned: number
+    vehiclesMaintenance: number
     salesToday: number
     salesWeek: number
     salesMonth: number
@@ -92,6 +104,7 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
   const totals = useMemo(() => {
     const products = data.products
+    const vehicles = data.vehicles
     const sales = data.sales
     const employees = data.employees
     const financeMovements = data.financeMovements
@@ -99,6 +112,9 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
     const totalProducts = products.length
     const availableInventory = products.reduce((sum, item) => sum + item.stock, 0)
+    const vehiclesAvailable = vehicles.filter((vehicle) => vehicle.status === 'Disponible').length
+    const vehiclesAssigned = vehicles.filter((vehicle) => vehicle.status === 'Asignado').length
+    const vehiclesMaintenance = vehicles.filter((vehicle) => vehicle.status === 'Mantenimiento').length
     const activeEmployees = employees.filter((employee) => employee.status === 'Activo').length
     const todayKey = new Date().toISOString().slice(0, 10)
     const monthKey = todayKey.slice(0, 7)
@@ -127,6 +143,9 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       activeEmployees,
       totalProducts,
       availableInventory,
+      vehiclesAvailable,
+      vehiclesAssigned,
+      vehiclesMaintenance,
       salesToday,
       salesWeek,
       salesMonth,
@@ -141,6 +160,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     settings: data.settings,
     employees: data.employees,
     products: data.products,
+    vehicles: data.vehicles,
+    vehicleMovements: data.vehicleMovements,
     inventoryMovements: data.inventoryMovements,
     employeeStocks: data.employeeStocks,
     employeeStockMovements: data.employeeStockMovements,
@@ -323,6 +344,51 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         products: current.products.filter((product) => product.id !== productId),
         employeeStocks: current.employeeStocks.filter((row) => row.productId !== productId),
         employeeStockMovements: current.employeeStockMovements.filter((row) => row.productId !== productId),
+      }))
+    },
+    addVehicle: (vehicle) => {
+      setData((current) => ({
+        ...current,
+        vehicles: [
+          {
+            ...vehicle,
+            id: createId('vehicle'),
+            createdAt: vehicle.createdAt ?? new Date().toISOString(),
+            updatedAt: vehicle.updatedAt ?? new Date().toISOString(),
+            status: vehicle.status ?? 'Disponible',
+          },
+          ...current.vehicles,
+        ],
+      }))
+    },
+    updateVehicle: (vehicleId, updates) => {
+      setData((current) => ({
+        ...current,
+        vehicles: current.vehicles.map((vehicle) =>
+          vehicle.id === vehicleId
+            ? { ...vehicle, ...updates, updatedAt: new Date().toISOString() }
+            : vehicle,
+        ),
+      }))
+    },
+    deleteVehicle: (vehicleId) => {
+      setData((current) => ({
+        ...current,
+        vehicles: current.vehicles.filter((vehicle) => vehicle.id !== vehicleId),
+        vehicleMovements: current.vehicleMovements.filter((movement) => movement.vehicleId !== vehicleId),
+      }))
+    },
+    addVehicleMovement: (movement) => {
+      setData((current) => ({
+        ...current,
+        vehicleMovements: [
+          {
+            ...movement,
+            id: createId('vehicle_movement'),
+            createdAt: movement.createdAt ?? new Date().toISOString(),
+          },
+          ...current.vehicleMovements,
+        ],
       }))
     },
     addInventoryMovement: (movement) => {
@@ -855,6 +921,14 @@ export function AppDataProvider({ children }: PropsWithChildren) {
           },
           ...current.users,
         ],
+      }))
+    },
+    updateUser: (userId, updates) => {
+      setData((current) => ({
+        ...current,
+        users: current.users.map((user) =>
+          user.id === userId ? { ...user, ...updates } : user,
+        ),
       }))
     },
     resetAll: () => {

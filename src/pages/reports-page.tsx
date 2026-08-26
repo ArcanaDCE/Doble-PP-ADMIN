@@ -28,7 +28,7 @@ function toCsvValue(value: string | number) {
 }
 
 export function ReportsPage() {
-  const { employees, sales, payments, financeMovements, totals } = useAppData()
+  const { employees, sales, payments, financeMovements, cuts, vehicles, vehicleMovements, settings, totals } = useAppData()
   const { notifyInfo, notifySuccess } = useFeedback()
 
   const weeklySales = useMemo(() => {
@@ -71,6 +71,13 @@ export function ReportsPage() {
       .slice(0, 5)
   }, [employees, payments, sales])
 
+  const totalCommission = cuts.reduce((sum, cut) => sum + cut.commission, 0)
+  const totalX = cuts.reduce((sum, cut) => sum + cut.xLevel, 0)
+  const averageSalesPerCut = cuts.length > 0 ? cuts.reduce((sum, cut) => sum + cut.salesTotal, 0) / cuts.length : 0
+  const activeVehicles = vehicles.filter((vehicle) => vehicle.status === 'Disponible' || vehicle.status === 'Asignado').length
+  const vehiclesInMaintenance = vehicles.filter((vehicle) => vehicle.status === 'Mantenimiento').length
+  const recentVehicleMovements = vehicleMovements.length
+
   const reportCards = [
     {
       label: 'Ventas de hoy',
@@ -99,6 +106,13 @@ export function ReportsPage() {
       trend: financeMovements.length > 0 ? `${financeMovements.length} movimientos financieros` : 'Sin movimientos financieros',
       accent: 'violet' as const,
       badge: 'Balance',
+    },
+    {
+      label: 'Sistema X',
+      value: `X${totalX}`,
+      trend: `${formatCurrency(totalCommission)} en comisión · venta por X: ${formatCurrency(settings.commissionRuleAmount)}`,
+      accent: 'rose' as const,
+      badge: 'Cortes',
     },
   ]
 
@@ -169,6 +183,12 @@ export function ReportsPage() {
         {reportCards.map((card) => (
           <StatCard key={card.label} {...card} />
         ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Cortes cerrados" value={String(cuts.length)} trend={`Promedio ${formatCurrency(averageSalesPerCut)}`} accent="sky" />
+        <StatCard label="Vehículos activos" value={String(activeVehicles)} trend={`${vehiclesInMaintenance} en mantenimiento`} accent="emerald" />
+        <StatCard label="Movimientos de flotilla" value={String(recentVehicleMovements)} trend="Historial de unidades" accent="amber" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -262,6 +282,32 @@ export function ReportsPage() {
               ))}
             </div>
           )}
+        </SectionCard>
+
+        <SectionCard
+          title="Sistema X y flotilla"
+          description="Resumen de cortes, comisión y estado general de vehículos."
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              Venta por X: {formatCurrency(settings.commissionRuleAmount)}
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              Comisión por X: {formatCurrency(settings.commissionRuleBonus)}
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              Comisión acumulada: {formatCurrency(totalCommission)}
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              Cortes cerrados: {cuts.length}
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              Vehículos activos: {activeVehicles}
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+              En mantenimiento: {vehiclesInMaintenance}
+            </div>
+          </div>
         </SectionCard>
       </div>
     </div>

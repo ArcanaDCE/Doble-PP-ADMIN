@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
+import { loadAppData } from '../../lib/app-data.ts'
 
-export type AppRole = 'administrator' | 'supervisor'
+export type AppRole = 'administrator' | 'supervisor' | 'employee' | 'seller'
 
 export type AuthUser = {
   id: string
   email: string
   role: AppRole
   name: string
+  employeeId?: string
 }
 
 export type AuthSession = {
@@ -22,7 +24,7 @@ type AuthContextValue = {
   isConfigured: boolean
   configError: string | null
   role: AppRole
-  signIn: (email: string, password: string) => Promise<string | null>
+  signIn: (email: string, password: string) => Promise<{ error: string | null; redirectTo?: string }>
   signOut: () => Promise<string | null>
 }
 
@@ -47,6 +49,26 @@ function createSession(email: string, name: string): AuthSession {
       email: email.trim().toLowerCase(),
       role: 'administrator',
       name,
+    },
+  }
+}
+
+function createUserSession(user: {
+  id: string
+  email: string
+  role: AppRole
+  name: string
+  employeeId?: string
+}): AuthSession {
+  return {
+    token: `local_${Math.random().toString(36).slice(2, 12)}`,
+    createdAt: new Date().toISOString(),
+    user: {
+      id: user.id,
+      email: user.email.trim().toLowerCase(),
+      role: user.role,
+      name: user.name,
+      employeeId: user.employeeId,
     },
   }
 }
@@ -88,6 +110,14 @@ function persistSession(session: AuthSession | null) {
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
 }
 
+function getDefaultRouteForRole(role: AppRole) {
+  return role === 'administrator' ? '/admin' : '/my-space'
+}
+
+function getLocalUsers() {
+  return loadAppData().users
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -98,10 +128,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [])
 
   const { email: configuredEmail, password: configuredPassword, name: configuredName } = getConfiguredCredentials()
-  const isConfigured = Boolean(configuredEmail && configuredPassword)
+  const localUsers = getLocalUsers()
+  const hasLocalCredentials = localUsers.some((user) => user.status === 'Activo' && Boolean(user.password))
+  const isConfigured = Boolean((configuredEmail && configuredPassword) || hasLocalCredentials)
   const configError = isConfigured
     ? null
-    : 'Faltan VITE_APP_ADMIN_EMAIL y VITE_APP_ADMIN_PASSWORD. Configúralas antes de publicar.'
+    : 'Faltan credenciales. Configura el administrador en Netlify o crea usuarios locales con contraseña.'
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -113,18 +145,38 @@ export function AuthProvider({ children }: PropsWithChildren) {
       role: session?.user.role ?? 'administrator',
       async signIn(email, password) {
         if (!isConfigured) {
-          return configError
+          return { error: configError }
         }
 
         const normalizedEmail = email.trim().toLowerCase()
-        if (normalizedEmail !== configuredEmail || password !== configuredPassword) {
-          return 'Correo o contraseña incorrectos.'
+        if (normalizedEmail === configuredEmail && password === configuredPassword) {
+          const nextSession = createSession(normalizedEmail, configuredName)
+          persistSession(nextSession)
+          setSession(nextSession)
+          return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
         }
 
-        const nextSession = createSession(normalizedEmail, configuredName)
+        const matchedUser = getLocalUsers().find(
+          (user) =>
+            user.status === 'Activo' &&
+            user.email.trim().toLowerCase() === normalizedEmail &&
+            user.password === password,
+        )
+
+        if (!matchedUser) {
+          return { error: 'Correo o contraseña incorrectos.' }
+        }
+
+        const nextSession = createUserSession({
+          id: matchedUser.id,
+          email: matchedUser.email,
+          role: matchedUser.role,
+          name: matchedUser.name,
+          employeeId: matchedUser.employeeId,
+        })
         persistSession(nextSession)
         setSession(nextSession)
-        return null
+        return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
       },
       async signOut() {
         persistSession(null)
@@ -137,6 +189,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
+
+export { getDefaultRouteForRole }
 
 export function useAuth() {
   const context = useContext(AuthContext)
