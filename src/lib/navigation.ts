@@ -14,6 +14,8 @@ import {
   UserRound,
 } from 'lucide-react'
 
+export type NavAudience = 'all' | 'admin' | 'manager' | 'operator'
+
 export const navigationItems = [
   {
     path: '/dashboard',
@@ -52,7 +54,7 @@ export const navigationItems = [
     label: 'Inventario',
     description: 'Entradas, salidas y ajustes',
     icon: Layers3,
-    audience: 'admin' as const,
+    audience: 'manager' as const,
     section: 'admin' as const,
   },
   {
@@ -68,7 +70,7 @@ export const navigationItems = [
     label: 'Ventas',
     description: 'Registro y rendimiento',
     icon: ShoppingBag,
-    audience: 'all' as const,
+    audience: 'operator' as const,
     section: 'operacion' as const,
   },
   {
@@ -76,7 +78,7 @@ export const navigationItems = [
     label: 'Cortes',
     description: 'Cierres y comisiones',
     icon: ClipboardCheck,
-    audience: 'all' as const,
+    audience: 'operator' as const,
     section: 'operacion' as const,
   },
   {
@@ -84,7 +86,7 @@ export const navigationItems = [
     label: 'Deudas / Ahorros',
     description: 'Movimientos y saldos',
     icon: CreditCard,
-    audience: 'all' as const,
+    audience: 'operator' as const,
     section: 'operacion' as const,
   },
   {
@@ -92,7 +94,7 @@ export const navigationItems = [
     label: 'Pagos',
     description: 'Salarios, bonos y comisiones',
     icon: ReceiptText,
-    audience: 'all' as const,
+    audience: 'operator' as const,
     section: 'operacion' as const,
   },
   {

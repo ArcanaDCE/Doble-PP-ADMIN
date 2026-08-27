@@ -89,8 +89,27 @@ export function DashboardPage() {
         >
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {navigationItems
-              .filter((item) => (role === 'administrator' ? item.path !== '/dashboard' : item.audience === 'all'))
               .filter((item) => item.path !== '/dashboard' && item.path !== '/my-space')
+              .filter((item) => {
+                if (role === 'administrator') {
+                  return true
+                }
+
+                const audience = String(item.audience)
+                if (audience === 'all') {
+                  return true
+                }
+
+                if (audience === 'manager') {
+                  return role === 'supervisor'
+                }
+
+                if (audience === 'operator') {
+                  return ['supervisor', 'seller'].includes(role)
+                }
+
+                return false
+              })
               .map((item) => (
               <article key={item.path} className="rounded-[24px] border border-white/10 bg-white/5 p-5 transition hover:border-sky-400/30 hover:bg-sky-400/5">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950/70 text-sky-200">

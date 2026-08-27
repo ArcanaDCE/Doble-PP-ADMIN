@@ -32,16 +32,23 @@ export function AppRouter() {
         <Route element={<AdminShell />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/my-space" element={<MySpacePage />} />
-          <Route path="/sales" element={<SalesPage />} />
-          <Route path="/cuts" element={<CutsPage />} />
-          <Route path="/finance" element={<FinancePage />} />
-          <Route path="/payments" element={<PaymentsPage />} />
+
+          <Route element={<RoleRoute allowedRoles={['administrator', 'supervisor', 'seller']} />}>
+            <Route path="/sales" element={<SalesPage />} />
+            <Route path="/cuts" element={<CutsPage />} />
+            <Route path="/finance" element={<FinancePage />} />
+            <Route path="/payments" element={<PaymentsPage />} />
+          </Route>
+
+          <Route element={<RoleRoute allowedRoles={['administrator', 'supervisor']} />}>
+            <Route path="/inventory" element={<InventoryPage />} />
+          </Route>
+
           <Route element={<RoleRoute allowedRoles={['administrator']} />}>
             <Route path="/admin" element={<AdminCenterPage />} />
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/employees/:employeeId" element={<EmployeeProfilePage />} />
             <Route path="/products" element={<ProductsPage />} />
-            <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

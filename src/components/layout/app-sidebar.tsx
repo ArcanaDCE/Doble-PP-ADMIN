@@ -19,8 +19,24 @@ function isActivePath(currentPath: string, itemPath: string) {
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
 }
 
-function canSeeItem(itemAudience: 'all' | 'admin', role: string) {
-  return itemAudience === 'all' || role === 'administrator'
+function canSeeItem(itemAudience: 'all' | 'admin' | 'manager' | 'operator', role: string) {
+  if (itemAudience === 'all') {
+    return true
+  }
+
+  if (itemAudience === 'admin') {
+    return role === 'administrator'
+  }
+
+  if (itemAudience === 'manager') {
+    return role === 'administrator' || role === 'supervisor'
+  }
+
+  if (itemAudience === 'operator') {
+    return ['administrator', 'supervisor', 'seller'].includes(role)
+  }
+
+  return false
 }
 
 function sectionLabel(section: string) {

@@ -111,7 +111,15 @@ function persistSession(session: AuthSession | null) {
 }
 
 function getDefaultRouteForRole(role: AppRole) {
-  return role === 'administrator' ? '/admin' : '/my-space'
+  if (role === 'administrator') {
+    return '/admin'
+  }
+
+  if (role === 'supervisor') {
+    return '/inventory'
+  }
+
+  return '/my-space'
 }
 
 function getLocalUsers() {
