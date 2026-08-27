@@ -3,6 +3,7 @@ import {
   createId,
   formatCurrency,
   getDefaultAppData,
+  isSameBusinessWeek,
   loadAppData,
   saveAppData,
   type ActivityItem,
@@ -69,6 +70,7 @@ interface AppDataContextValue {
   updateSettings: (updates: Partial<AppSettings>) => void
   addUser: (user: Omit<import('../../lib/app-data.ts').AppUser, 'id' | 'lastLogin'> & { lastLogin?: string }) => void
   updateUser: (userId: string, updates: Partial<import('../../lib/app-data.ts').AppUser>) => void
+  resetOperationalData: () => void
   resetAll: () => void
   totals: {
     activeEmployees: number
@@ -738,6 +740,12 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         const lastCut = [...current.cuts]
           .filter((item) => item.employeeId === employee.id)
           .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0]
+
+        if (lastCut && isSameBusinessWeek(lastCut.createdAt, cut.createdAt ?? new Date().toISOString())) {
+          errorMessage = 'Este empleado ya tiene un corte registrado en la semana actual.'
+          return current
+        }
+
         const since = lastCut ? new Date(lastCut.createdAt).getTime() : 0
         const periodSales = current.sales.filter(
           (sale) => sale.employeeId === employee.id && new Date(sale.createdAt).getTime() > since,
@@ -929,6 +937,33 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         users: current.users.map((user) =>
           user.id === userId ? { ...user, ...updates } : user,
         ),
+      }))
+    },
+    resetOperationalData: () => {
+      setData((current) => ({
+        ...current,
+        employees: current.employees.map((employee) => ({
+          ...employee,
+          sales: 0,
+          debt: 0,
+          savings: 0,
+          payments: 0,
+        })),
+        employeeStocks: current.employeeStocks.map((stock) => ({
+          ...stock,
+          quantity: stock.totalAssigned,
+          totalSold: 0,
+          updatedAt: new Date().toISOString(),
+        })),
+        employeeStockMovements: current.employeeStockMovements.filter(
+          (movement) => movement.type !== 'Venta',
+        ),
+        cuts: [],
+        expenses: [],
+        sales: [],
+        payments: [],
+        financeMovements: [],
+        activity: [],
       }))
     },
     resetAll: () => {

@@ -7,7 +7,7 @@ import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 
 export function SettingsPage() {
-  const { settings: storedSettings, updateSettings, addActivity } = useAppData()
+  const { settings: storedSettings, updateSettings, addActivity, resetOperationalData } = useAppData()
   const [settings, setSettings] = useState(storedSettings)
   const [saveMessage, setSaveMessage] = useState('')
   const { notifySuccess } = useFeedback()
@@ -32,6 +32,21 @@ export function SettingsPage() {
     setSaveMessage('Configuración guardada correctamente.')
     window.setTimeout(() => setSaveMessage(''), 2200)
     notifySuccess('Configuración guardada', 'Los ajustes quedaron listos para la operación diaria.')
+  }
+
+  function handleResetOperationalData() {
+    const confirmed = window.confirm(
+      'Esto reiniciará ventas, cortes, pagos, deudas, ahorros, gastos y actividad reciente, manteniendo empleados, productos y accesos. ¿Deseas continuar?',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    resetOperationalData()
+    setSaveMessage('La operación quedó reiniciada y los indicadores volvieron a cero.')
+    window.setTimeout(() => setSaveMessage(''), 2600)
+    notifySuccess('Operación reiniciada', 'Las ganancias y movimientos de prueba se limpiaron sin borrar empleados ni accesos.')
   }
 
   return (
@@ -199,6 +214,20 @@ export function SettingsPage() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard
+        title="Reinicio operativo"
+        description="Úsalo cuando quieras limpiar ventas o ganancias de prueba y volver los indicadores a cero sin borrar empleados, productos ni accesos."
+      >
+        <div className="flex flex-col gap-4 rounded-[24px] border border-rose-400/20 bg-rose-400/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-7 text-rose-50/90">
+            Esta acción elimina registros operativos y actividad reciente, además de reiniciar los acumulados de ventas, deuda, ahorro y pagos.
+          </p>
+          <Button variant="danger" onClick={handleResetOperationalData}>
+            Dejar operación en cero
+          </Button>
+        </div>
+      </SectionCard>
 
       <div className="flex flex-col items-start justify-between gap-3 rounded-[24px] border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center">
         <p className="text-sm text-slate-300">{saveMessage || 'Los cambios se guardan de forma local y quedan listos para operar en esta instalación.'}</p>

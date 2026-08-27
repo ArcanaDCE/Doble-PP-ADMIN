@@ -8,7 +8,7 @@ import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatCard } from '../components/ui/stat-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency, formatDateTime } from '../lib/app-data.ts'
+import { formatCurrency, formatDateTime, formatDate, getStartOfBusinessWeek, isSameBusinessWeek } from '../lib/app-data.ts'
 
 const defaultForm = {
   employeeId: '',
@@ -91,6 +91,10 @@ export function CutsPage() {
   const selectedSavings = selectedEmployee?.savings ?? 0
   const selectedPayments = selectedEmployee?.payments ?? 0
   const selectedNet = selectedCommission - selectedDebt - selectedExpensesTotal
+  const currentWeekStart = useMemo(() => getStartOfBusinessWeek(new Date()), [])
+  const hasWeeklyCutClosed = Boolean(
+    selectedLastCut && isSameBusinessWeek(selectedLastCut.createdAt, currentWeekStart),
+  )
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -102,6 +106,11 @@ export function CutsPage() {
 
     if (!selectedEmployee) {
       notifyError('Empleado no disponible', 'Selecciona nuevamente al repartidor.')
+      return
+    }
+
+    if (hasWeeklyCutClosed) {
+      notifyError('Corte semanal ya registrado', 'Este empleado ya tiene un corte en la semana actual.')
       return
     }
 
@@ -194,38 +203,52 @@ export function CutsPage() {
               {!selectedEmployee ? (
                 <p className="text-sm text-slate-300">Selecciona un repartidor para ver el resumen de su corte.</p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ventas del periodo</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedSalesTotal)}</p>
-                    <p className="mt-2 text-sm text-slate-400">{selectedPeriodSales.length} venta(s)</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sistema X</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">X{selectedXLevel}</p>
-                    <p className="mt-2 text-sm text-slate-400">{formatCurrency(selectedCommission)} de comisión</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Stock restante</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{selectedRemainingUnits}</p>
-                    <p className="mt-2 text-sm text-slate-400">{selectedSoldUnits} vendidos de {selectedAssignedUnits}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Neto estimado</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedNet)}</p>
-                    <p className="mt-2 text-sm text-slate-400">Comisión menos deuda y gastos</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Gastos aprobados</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedExpensesTotal)}</p>
-                    <p className="mt-2 text-sm text-slate-400">{selectedPeriodExpenses.length} gasto(s)</p>
+                <div className="space-y-4">
+                  {hasWeeklyCutClosed ? (
+                    <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+                      Este empleado ya tiene un corte registrado esta semana. Podrás generar el siguiente a partir del
+                      lunes siguiente. Último corte: <strong>{selectedLastCut ? formatDate(selectedLastCut.createdAt) : 'Sin fecha'}</strong>.
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+                      Semana operativa actual desde el <strong>{formatDate(currentWeekStart)}</strong>. Solo se permite
+                      un corte por empleado en ese periodo.
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ventas del periodo</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedSalesTotal)}</p>
+                      <p className="mt-2 text-sm text-slate-400">{selectedPeriodSales.length} venta(s)</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sistema X</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">X{selectedXLevel}</p>
+                      <p className="mt-2 text-sm text-slate-400">{formatCurrency(selectedCommission)} de comisión</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Stock restante</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{selectedRemainingUnits}</p>
+                      <p className="mt-2 text-sm text-slate-400">{selectedSoldUnits} vendidos de {selectedAssignedUnits}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Neto estimado</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedNet)}</p>
+                      <p className="mt-2 text-sm text-slate-400">Comisión menos deuda y gastos</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Gastos aprobados</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(selectedExpensesTotal)}</p>
+                      <p className="mt-2 text-sm text-slate-400">{selectedPeriodExpenses.length} gasto(s)</p>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
             <div className="md:col-span-2 flex justify-end">
-              <Button type="submit">
+              <Button type="submit" disabled={!selectedEmployee || hasWeeklyCutClosed}>
                 <ClipboardCheck className="h-4 w-4" />
                 Cerrar corte
               </Button>

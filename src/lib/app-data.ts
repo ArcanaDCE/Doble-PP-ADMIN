@@ -254,6 +254,22 @@ export function createId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }
 
+export function getStartOfBusinessWeek(date: string | Date) {
+  const resolved = typeof date === 'string' ? new Date(date) : new Date(date)
+  const start = new Date(resolved)
+  start.setHours(0, 0, 0, 0)
+
+  const day = start.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  start.setDate(start.getDate() + diff)
+
+  return start
+}
+
+export function isSameBusinessWeek(left: string | Date, right: string | Date) {
+  return getStartOfBusinessWeek(left).getTime() === getStartOfBusinessWeek(right).getTime()
+}
+
 export function getDefaultAppData(): AppData {
   const adminEmail = import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com'
 
