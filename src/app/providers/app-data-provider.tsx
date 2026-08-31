@@ -23,6 +23,7 @@ import {
   type Vehicle,
   type VehicleMovement,
 } from '../../lib/app-data.ts'
+import { fetchRemoteAppData, hasRemoteAppDataConfig, saveRemoteAppData } from '../../lib/remote-app-data.ts'
 
 interface AppDataContextValue {
   data: AppData
@@ -91,11 +92,64 @@ interface AppDataContextValue {
 const AppDataContext = createContext<AppDataContextValue | undefined>(undefined)
 
 export function AppDataProvider({ children }: PropsWithChildren) {
+  const remoteEnabled = hasRemoteAppDataConfig()
   const [data, setData] = useState<AppData>(() => loadAppData())
+  const [isRemoteHydrated, setIsRemoteHydrated] = useState(!remoteEnabled)
+
+  useEffect(() => {
+    if (!remoteEnabled) {
+      return
+    }
+
+    let cancelled = false
+
+    async function hydrateRemoteState() {
+      const remoteResult = await fetchRemoteAppData()
+
+      if (cancelled) {
+        return
+      }
+
+      if (remoteResult.error) {
+        console.error(remoteResult.error)
+        setIsRemoteHydrated(true)
+        return
+      }
+
+      if (remoteResult.data) {
+        setData(remoteResult.data)
+        setIsRemoteHydrated(true)
+        return
+      }
+
+      const seedError = await saveRemoteAppData(data)
+      if (seedError) {
+        console.error(seedError)
+      }
+      setIsRemoteHydrated(true)
+    }
+
+    void hydrateRemoteState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [remoteEnabled])
 
   useEffect(() => {
     saveAppData(data)
-  }, [data])
+
+    if (!remoteEnabled || !isRemoteHydrated) {
+      return
+    }
+
+    void (async () => {
+      const remoteSaveError = await saveRemoteAppData(data)
+      if (remoteSaveError) {
+        console.error(remoteSaveError)
+      }
+    })()
+  }, [data, isRemoteHydrated, remoteEnabled])
 
   function addActivity(activity: Omit<ActivityItem, 'id'>) {
     setData((current) => ({

@@ -32,7 +32,34 @@ Usa [\.env.local](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/.env.local>
 ```bash
 VITE_APP_ADMIN_EMAIL=admin@doblepp.com
 VITE_APP_ADMIN_PASSWORD=DoblePP2025!
+VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+VITE_SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
 ```
+
+## Sincronización entre dispositivos (varios administradores)
+
+Para que productos, empleados, ventas y accesos se vean en todos los dispositivos, la app debe usar un estado compartido en Supabase.
+
+1. Crea esta tabla en Supabase SQL Editor:
+
+```sql
+create table if not exists public.app_state (
+  id text primary key,
+  payload jsonb not null
+);
+```
+
+2. Inserta una fila inicial:
+
+```sql
+insert into public.app_state (id, payload)
+values ('main', '{}'::jsonb)
+on conflict (id) do nothing;
+```
+
+3. Asegura permisos de lectura/escritura para el uso actual de frontend (si usas anon key en cliente, define políticas compatibles con tu seguridad interna).
+
+Sin este paso, la app funciona por navegador (localStorage) y los cambios no se comparten entre dispositivos.
 
 ## Cómo probar acceso interno
 

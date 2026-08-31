@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 import { loadAppData } from '../../lib/app-data.ts'
+import { fetchRemoteAppData, hasRemoteAppDataConfig } from '../../lib/remote-app-data.ts'
 
 export type AppRole = 'administrator' | 'supervisor' | 'employee' | 'seller'
 
@@ -126,6 +127,25 @@ function getLocalUsers() {
   return loadAppData().users
 }
 
+async function getUsersForAuthentication() {
+  const localUsers = getLocalUsers()
+  if (!hasRemoteAppDataConfig()) {
+    return localUsers
+  }
+
+  const remoteResult = await fetchRemoteAppData()
+  if (remoteResult.error) {
+    console.error(remoteResult.error)
+    return localUsers
+  }
+
+  if (!remoteResult.data) {
+    return localUsers
+  }
+
+  return remoteResult.data.users
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -138,7 +158,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const { email: configuredEmail, password: configuredPassword, name: configuredName } = getConfiguredCredentials()
   const localUsers = getLocalUsers()
   const hasLocalCredentials = localUsers.some((user) => user.status === 'Activo' && Boolean(user.password))
-  const isConfigured = Boolean((configuredEmail && configuredPassword) || hasLocalCredentials)
+  const isConfigured = Boolean((configuredEmail && configuredPassword) || hasLocalCredentials || hasRemoteAppDataConfig())
   const configError = isConfigured
     ? null
     : 'Faltan credenciales. Configura el administrador en Netlify o crea usuarios locales con contraseña.'
@@ -164,7 +184,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
           return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
         }
 
-        const matchedUser = getLocalUsers().find(
+        const availableUsers = await getUsersForAuthentication()
+        const matchedUser = availableUsers.find(
           (user) =>
             user.status === 'Activo' &&
             user.email.trim().toLowerCase() === normalizedEmail &&
