@@ -1,7 +1,38 @@
-import type { AppData } from './app-data.ts'
+﻿import { getDefaultAppData, type AppData } from './app-data.ts'
 
 const REMOTE_ROW_ID = 'main'
 const REMOTE_TIMEOUT_MS = 8000
+
+function normalizeRemotePayload(payload: Partial<AppData> | null | undefined): AppData {
+  const base = getDefaultAppData()
+
+  if (!payload) {
+    return base
+  }
+
+  return {
+    ...base,
+    ...payload,
+    settings: {
+      ...base.settings,
+      ...(payload.settings ?? {}),
+    },
+    users: payload.users ?? base.users,
+    employees: payload.employees ?? base.employees,
+    products: payload.products ?? base.products,
+    vehicles: payload.vehicles ?? base.vehicles,
+    vehicleMovements: payload.vehicleMovements ?? base.vehicleMovements,
+    inventoryMovements: payload.inventoryMovements ?? base.inventoryMovements,
+    employeeStocks: payload.employeeStocks ?? base.employeeStocks,
+    employeeStockMovements: payload.employeeStockMovements ?? base.employeeStockMovements,
+    cuts: payload.cuts ?? base.cuts,
+    expenses: payload.expenses ?? base.expenses,
+    sales: payload.sales ?? base.sales,
+    payments: payload.payments ?? base.payments,
+    financeMovements: payload.financeMovements ?? base.financeMovements,
+    activity: payload.activity ?? base.activity,
+  }
+}
 
 function getSupabaseConfig() {
   const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim()
@@ -22,6 +53,7 @@ type FetchRemoteAppDataResult = {
 
 export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
   const { url, anonKey } = getSupabaseConfig()
+
   if (!url || !anonKey) {
     return { data: null, error: null }
   }
@@ -30,6 +62,7 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
     const endpoint = `${url}/rest/v1/app_state?id=eq.${REMOTE_ROW_ID}&select=payload&limit=1`
+
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
@@ -39,6 +72,7 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
       },
       signal: controller.signal,
     })
+
     window.clearTimeout(timeoutId)
 
     if (!response.ok) {
@@ -49,13 +83,14 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
       }
     }
 
-    const rows = (await response.json()) as Array<{ payload?: AppData }>
+    const rows = (await response.json()) as Array<{ payload?: Partial<AppData> }>
     const payload = rows[0]?.payload
+
     if (!payload) {
       return { data: null, error: null }
     }
 
-    return { data: payload, error: null }
+    return { data: normalizeRemotePayload(payload), error: null }
   } catch (error) {
     return {
       data: null,
@@ -69,6 +104,7 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
 
 export async function saveRemoteAppData(data: AppData): Promise<string | null> {
   const { url, anonKey } = getSupabaseConfig()
+
   if (!url || !anonKey) {
     return null
   }
@@ -77,6 +113,7 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
     const endpoint = `${url}/rest/v1/app_state?on_conflict=id`
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -93,6 +130,7 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
       ]),
       signal: controller.signal,
     })
+
     window.clearTimeout(timeoutId)
 
     if (!response.ok) {

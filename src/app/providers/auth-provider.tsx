@@ -143,7 +143,8 @@ async function getUsersForAuthentication() {
     return localUsers
   }
 
-  return remoteResult.data.users
+  const remoteUsers = Array.isArray(remoteResult.data.users) ? remoteResult.data.users : localUsers
+  return remoteUsers.length > 0 ? remoteUsers : localUsers
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -186,7 +187,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           }
 
           const availableUsers = await getUsersForAuthentication()
-          const matchedUser = availableUsers.find(
+          const matchedUser = (availableUsers ?? []).find(
             (user) =>
               user.status === 'Activo' &&
               user.email.trim().toLowerCase() === normalizedEmail &&
