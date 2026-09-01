@@ -86,7 +86,7 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
     const rows = (await response.json()) as Array<{ payload?: Partial<AppData> }>
     const payload = rows[0]?.payload
 
-    if (!payload) {
+    if (!payload || Object.keys(payload).length === 0) {
       return { data: null, error: null }
     }
 
