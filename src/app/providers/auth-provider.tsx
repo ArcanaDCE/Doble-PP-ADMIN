@@ -172,40 +172,45 @@ export function AuthProvider({ children }: PropsWithChildren) {
       configError,
       role: session?.user.role ?? 'administrator',
       async signIn(email, password) {
-        if (!isConfigured) {
-          return { error: configError }
-        }
+        try {
+          if (!isConfigured) {
+            return { error: configError }
+          }
 
-        const normalizedEmail = email.trim().toLowerCase()
-        if (normalizedEmail === configuredEmail && password === configuredPassword) {
-          const nextSession = createSession(normalizedEmail, configuredName)
+          const normalizedEmail = email.trim().toLowerCase()
+          if (normalizedEmail === configuredEmail && password === configuredPassword) {
+            const nextSession = createSession(normalizedEmail, configuredName)
+            persistSession(nextSession)
+            setSession(nextSession)
+            return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
+          }
+
+          const availableUsers = await getUsersForAuthentication()
+          const matchedUser = availableUsers.find(
+            (user) =>
+              user.status === 'Activo' &&
+              user.email.trim().toLowerCase() === normalizedEmail &&
+              user.password === password,
+          )
+
+          if (!matchedUser) {
+            return { error: 'Correo o contraseña incorrectos.' }
+          }
+
+          const nextSession = createUserSession({
+            id: matchedUser.id,
+            email: matchedUser.email,
+            role: matchedUser.role,
+            name: matchedUser.name,
+            employeeId: matchedUser.employeeId,
+          })
           persistSession(nextSession)
           setSession(nextSession)
           return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
+        } catch (error) {
+          console.error(error)
+          return { error: 'No se pudo validar el acceso. Revisa tu conexión e intenta de nuevo.' }
         }
-
-        const availableUsers = await getUsersForAuthentication()
-        const matchedUser = availableUsers.find(
-          (user) =>
-            user.status === 'Activo' &&
-            user.email.trim().toLowerCase() === normalizedEmail &&
-            user.password === password,
-        )
-
-        if (!matchedUser) {
-          return { error: 'Correo o contraseña incorrectos.' }
-        }
-
-        const nextSession = createUserSession({
-          id: matchedUser.id,
-          email: matchedUser.email,
-          role: matchedUser.role,
-          name: matchedUser.name,
-          employeeId: matchedUser.employeeId,
-        })
-        persistSession(nextSession)
-        setSession(nextSession)
-        return { error: null, redirectTo: getDefaultRouteForRole(nextSession.user.role) }
       },
       async signOut() {
         persistSession(null)

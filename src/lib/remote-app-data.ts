@@ -1,6 +1,7 @@
 import type { AppData } from './app-data.ts'
 
 const REMOTE_ROW_ID = 'main'
+const REMOTE_TIMEOUT_MS = 8000
 
 function getSupabaseConfig() {
   const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim()
@@ -25,31 +26,45 @@ export async function fetchRemoteAppData(): Promise<FetchRemoteAppDataResult> {
     return { data: null, error: null }
   }
 
-  const endpoint = `${url}/rest/v1/app_state?id=eq.${REMOTE_ROW_ID}&select=payload&limit=1`
-  const response = await fetch(endpoint, {
-    method: 'GET',
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      Accept: 'application/json',
-    },
-  })
+  try {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
+    const endpoint = `${url}/rest/v1/app_state?id=eq.${REMOTE_ROW_ID}&select=payload&limit=1`
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    })
+    window.clearTimeout(timeoutId)
 
-  if (!response.ok) {
-    const details = await response.text()
+    if (!response.ok) {
+      const details = await response.text()
+      return {
+        data: null,
+        error: `No se pudo leer el estado remoto (${response.status}). ${details.slice(0, 140)}`,
+      }
+    }
+
+    const rows = (await response.json()) as Array<{ payload?: AppData }>
+    const payload = rows[0]?.payload
+    if (!payload) {
+      return { data: null, error: null }
+    }
+
+    return { data: payload, error: null }
+  } catch (error) {
     return {
       data: null,
-      error: `No se pudo leer el estado remoto (${response.status}). ${details.slice(0, 140)}`,
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? 'La conexión con Supabase tardó demasiado.'
+          : `No se pudo conectar con Supabase. ${error instanceof Error ? error.message : ''}`.trim(),
     }
   }
-
-  const rows = (await response.json()) as Array<{ payload?: AppData }>
-  const payload = rows[0]?.payload
-  if (!payload) {
-    return { data: null, error: null }
-  }
-
-  return { data: payload, error: null }
 }
 
 export async function saveRemoteAppData(data: AppData): Promise<string | null> {
@@ -58,27 +73,39 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
     return null
   }
 
-  const endpoint = `${url}/rest/v1/app_state?on_conflict=id`
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify([
-      {
-        id: REMOTE_ROW_ID,
-        payload: data,
+  try {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
+    const endpoint = `${url}/rest/v1/app_state?on_conflict=id`
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
-    ]),
-  })
+      body: JSON.stringify([
+        {
+          id: REMOTE_ROW_ID,
+          payload: data,
+        },
+      ]),
+      signal: controller.signal,
+    })
+    window.clearTimeout(timeoutId)
 
-  if (!response.ok) {
-    const details = await response.text()
-    return `No se pudo guardar el estado remoto (${response.status}). ${details.slice(0, 140)}`
+    if (!response.ok) {
+      const details = await response.text()
+      return `No se pudo guardar el estado remoto (${response.status}). ${details.slice(0, 140)}`
+    }
+
+    return null
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return 'Se agotó el tiempo al guardar en Supabase.'
+    }
+
+    return `No se pudo guardar en Supabase. ${error instanceof Error ? error.message : ''}`.trim()
   }
-
-  return null
 }

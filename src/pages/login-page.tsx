@@ -43,16 +43,21 @@ export function LoginPage() {
     setErrorMessage(null)
     setIsSubmitting(true)
 
-    const response = await signIn(normalizedEmail, password)
+    try {
+      const response = await signIn(normalizedEmail, password)
 
-    if (response.error) {
-      setErrorMessage(normalizeAuthError(response.error))
+      if (response.error) {
+        setErrorMessage(normalizeAuthError(response.error))
+        return
+      }
+
+      navigate(response.redirectTo || redirectTo || getDefaultRouteForRole('administrator'), { replace: true })
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('No se pudo validar el acceso. Intenta nuevamente.')
+    } finally {
       setIsSubmitting(false)
-      return
     }
-
-    setIsSubmitting(false)
-    navigate(response.redirectTo || redirectTo || getDefaultRouteForRole('administrator'), { replace: true })
   }
 
   return (
