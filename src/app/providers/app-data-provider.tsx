@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 import {
   createId,
   formatCurrency,
@@ -95,6 +95,9 @@ export function AppDataProvider({ children }: PropsWithChildren) {
   const remoteEnabled = hasRemoteAppDataConfig()
   const [data, setData] = useState<AppData>(() => loadAppData())
   const [isRemoteHydrated, setIsRemoteHydrated] = useState(!remoteEnabled)
+  // Tracks whether a local edit happened while the remote fetch was still in flight, so we don't
+  // let a slow hydration silently overwrite something the admin just created (e.g. a new employee).
+  const hasLocalEditSinceMount = useRef(false)
 
   useEffect(() => {
     if (!remoteEnabled) {
@@ -117,14 +120,18 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       }
 
       if (remoteResult.data) {
-        setData(remoteResult.data)
+        if (!hasLocalEditSinceMount.current) {
+          setData(remoteResult.data)
+        }
         setIsRemoteHydrated(true)
         return
       }
 
-      const seedError = await saveRemoteAppData(data)
-      if (seedError) {
-        console.error(seedError)
+      if (!hasLocalEditSinceMount.current) {
+        const seedError = await saveRemoteAppData(data)
+        if (seedError) {
+          console.error(seedError)
+        }
       }
       setIsRemoteHydrated(true)
     }
@@ -136,8 +143,18 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     }
   }, [remoteEnabled])
 
+  const isFirstDataEffect = useRef(true)
+
   useEffect(() => {
     saveAppData(data)
+
+    if (isFirstDataEffect.current) {
+      isFirstDataEffect.current = false
+    } else if (remoteEnabled && !isRemoteHydrated) {
+      // A local change landed before the remote fetch resolved; flag it so the pending
+      // hydration doesn't clobber it once it completes.
+      hasLocalEditSinceMount.current = true
+    }
 
     if (!remoteEnabled || !isRemoteHydrated) {
       return
@@ -370,6 +387,9 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         employees: current.employees.filter((employee) => employee.id !== employeeId),
         employeeStocks: current.employeeStocks.filter((row) => row.employeeId !== employeeId),
         employeeStockMovements: current.employeeStockMovements.filter((row) => row.employeeId !== employeeId),
+        // Deleting an employee must also revoke any login access linked to them,
+        // otherwise their credentials remain active after the employee record is gone.
+        users: current.users.filter((user) => user.employeeId !== employeeId),
       }))
     },
     addProduct: (product) => {
