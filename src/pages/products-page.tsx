@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency } from '../lib/app-data.ts'
+import { createId, formatCurrency } from '../lib/app-data.ts'
 
 export const PRODUCT_CATEGORIES = ['Polvo', 'Wax', 'Vapes', 'Balazos', 'Weed'] as const
 
@@ -20,6 +20,7 @@ const defaultForm: {
   stock: string
   minimumStock: string
   status: 'Activo' | 'Bajo stock' | 'Inactivo'
+  variants: Array<{ name: string; price: string; cost: string }>
 } = {
   name: '',
   category: PRODUCT_CATEGORIES[0],
@@ -29,6 +30,7 @@ const defaultForm: {
   stock: '0',
   minimumStock: '0',
   status: 'Activo',
+  variants: [],
 }
 
 export function ProductsPage() {
@@ -46,6 +48,15 @@ export function ProductsPage() {
       return
     }
 
+    const variants = form.variants
+      .filter((variant) => variant.name.trim())
+      .map((variant) => ({
+        id: createId('variant'),
+        name: variant.name.trim(),
+        price: Number(variant.price || 0),
+        cost: Number(variant.cost || 0),
+      }))
+
     addProduct({
       name: form.name.trim(),
       category: form.category.trim(),
@@ -55,6 +66,7 @@ export function ProductsPage() {
       stock: Number(form.stock || 0),
       minimumStock: Number(form.minimumStock || 0),
       status: form.status,
+      variants,
     })
     addActivity({
       user: 'Administrador',
@@ -148,6 +160,97 @@ export function ProductsPage() {
               <label className="mb-2 block text-sm font-medium text-slate-300">Descripción</label>
               <textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className="min-h-28 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none" placeholder="Descripción del producto" />
             </div>
+
+            <div className="md:col-span-2 xl:col-span-3 rounded-[24px] border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">Variedades de precio</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Ejemplo: "Normal $300" y "Descuento $250". Si no agregas variedades, se usa el precio y costo base de arriba.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      variants: [...current.variants, { name: '', price: '', cost: '' }],
+                    }))
+                  }
+                >
+                  Agregar variedad
+                </Button>
+              </div>
+              {form.variants.length === 0 ? (
+                <p className="mt-3 rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-3 text-xs text-slate-400">
+                  Sin variedades. El vendedor usará el precio y costo base del producto.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {form.variants.map((variant, index) => (
+                    <div key={index} className="grid gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-400">Nombre</label>
+                        <input
+                          value={variant.name}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              variants: current.variants.map((item, i) => (i === index ? { ...item, name: event.target.value } : item)),
+                            }))
+                          }
+                          className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                          placeholder='Ej. Normal / Descuento'
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-400">Precio</label>
+                        <input
+                          type="number" min="0"
+                          value={variant.price}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              variants: current.variants.map((item, i) => (i === index ? { ...item, price: event.target.value } : item)),
+                            }))
+                          }
+                          className="h-10 w-28 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-400">Costo</label>
+                        <input
+                          type="number" min="0"
+                          value={variant.cost}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              variants: current.variants.map((item, i) => (i === index ? { ...item, cost: event.target.value } : item)),
+                            }))
+                          }
+                          className="h-10 w-28 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            variants: current.variants.filter((_, i) => i !== index),
+                          }))
+                        }
+                      >
+                        Quitar
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="md:col-span-2 xl:col-span-3 flex justify-end gap-3">
               <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
               <Button type="submit">Guardar producto</Button>
@@ -178,6 +281,19 @@ export function ProductsPage() {
                   <div className="rounded-2xl bg-slate-950/60 p-3"><p className="text-slate-500">Stock</p><p className="mt-1 font-medium text-white">{product.stock}</p></div>
                   <div className="rounded-2xl bg-slate-950/60 p-3"><p className="text-slate-500">Mínimo</p><p className="mt-1 font-medium text-white">{product.minimumStock}</p></div>
                 </div>
+                {product.variants && product.variants.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-sky-400/15 bg-sky-400/5 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-300">Variedades</p>
+                    <div className="mt-2 space-y-1.5">
+                      {product.variants.map((variant) => (
+                        <div key={variant.id} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">{variant.name}</span>
+                          <span className="font-medium text-white">{formatCurrency(variant.price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Link to="/inventory" className="inline-flex">
                     <Button size="sm" variant="secondary">Inventario</Button>

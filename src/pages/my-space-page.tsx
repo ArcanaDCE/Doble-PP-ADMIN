@@ -1,4 +1,4 @@
-import { Clock3, Coins, ShoppingBag, UserRound } from 'lucide-react'
+import { Clock3, ShoppingBag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
 import { useAuth } from '../app/providers/auth-provider.tsx'
@@ -11,9 +11,10 @@ import { formatCurrency, formatDateTime } from '../lib/app-data.ts'
 
 export function MySpacePage() {
   const { user } = useAuth()
-  const { employees, employeeStocks, employeeStockMovements, sales, cuts, financeMovements } = useAppData()
+  const { employees, products, employeeStocks, employeeStockMovements, sales, cuts, financeMovements } = useAppData()
 
   const linkedEmployee = employees.find((employee) => employee.id === user?.employeeId)
+  const getProduct = (productId: string) => products.find((product) => product.id === productId)
   const assignedStock = linkedEmployee
     ? employeeStocks.filter((item) => item.employeeId === linkedEmployee.id)
     : []
@@ -96,19 +97,38 @@ export function MySpacePage() {
                     Aún no tienes productos asignados.
                   </p>
                 ) : (
-                  assignedStock.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-white">{item.productName}</p>
-                          <p className="mt-1 text-sm text-slate-400">
-                            Asignado: {item.totalAssigned} · Vendido: {item.totalSold}
-                          </p>
+                  assignedStock.map((item) => {
+                    const product = getProduct(item.productId)
+                    const variantList = product?.variants && product.variants.length > 0 ? product.variants : null
+                    return (
+                      <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-white">{item.productName}</p>
+                            <p className="mt-1 text-sm text-slate-400">
+                              Asignado: {item.totalAssigned} · Vendido: {item.totalSold}
+                            </p>
+                          </div>
+                          <StatusBadge label={`${item.quantity} disponibles`} tone="success" />
                         </div>
-                        <StatusBadge label={`${item.quantity} disponibles`} tone="success" />
+                        {variantList ? (
+                          <div className="mt-3 space-y-1.5 border-t border-white/5 pt-3">
+                            {variantList.map((variant) => (
+                              <div key={variant.id} className="flex items-center justify-between text-sm">
+                                <span className="text-slate-400">{variant.name}</span>
+                                <span className="font-medium text-sky-200">{formatCurrency(variant.price)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : product ? (
+                          <p className="mt-3 border-t border-white/5 pt-3 text-sm">
+                            <span className="text-slate-400">Precio: </span>
+                            <span className="font-medium text-sky-200">{formatCurrency(product.price)}</span>
+                          </p>
+                        ) : null}
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </SectionCard>
@@ -151,22 +171,12 @@ export function MySpacePage() {
         </>
       )}
 
-      <SectionCard title="Acciones rápidas" description="Accesos a tus módulos operativos.">
-        <div className="grid gap-4 md:grid-cols-3">
-          <Link to="/cuts" className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <UserRound className="h-6 w-6 text-sky-200" />
-            <p className="mt-3 font-medium text-white">Mis cortes</p>
-            <p className="mt-1 text-sm text-slate-400">Revisar cierres y comisión.</p>
-          </Link>
-          <Link to="/finance" className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <Coins className="h-6 w-6 text-sky-200" />
-            <p className="mt-3 font-medium text-white">Ahorros y deuda</p>
-            <p className="mt-1 text-sm text-slate-400">Ver saldos personales.</p>
-          </Link>
+      <SectionCard title="Acciones rápidas" description="Tu módulo operativo.">
+        <div className="grid gap-4">
           <Link to="/sales" className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <ShoppingBag className="h-6 w-6 text-sky-200" />
             <p className="mt-3 font-medium text-white">Ventas</p>
-            <p className="mt-1 text-sm text-slate-400">Registrar ventas desde tu stock.</p>
+            <p className="mt-1 text-sm text-slate-400">Registrar ventas desde tu stock asignado.</p>
           </Link>
         </div>
       </SectionCard>

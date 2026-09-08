@@ -33,8 +33,12 @@ export function AppRouter() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/my-space" element={<MySpacePage />} />
 
+          {/* Seller only gets sales + their own space. Cuts/finance/payments are admin & supervisor. */}
           <Route element={<RoleRoute allowedRoles={['administrator', 'supervisor', 'seller']} />}>
             <Route path="/sales" element={<SalesPage />} />
+          </Route>
+
+          <Route element={<RoleRoute allowedRoles={['administrator', 'supervisor']} />}>
             <Route path="/cuts" element={<CutsPage />} />
             <Route path="/finance" element={<FinancePage />} />
             <Route path="/payments" element={<PaymentsPage />} />

@@ -32,6 +32,13 @@ export interface Employee {
   notes?: string
 }
 
+export interface ProductVariant {
+  id: string
+  name: string
+  price: number
+  cost: number
+}
+
 export interface Product {
   id: string
   name: string
@@ -42,6 +49,7 @@ export interface Product {
   stock: number
   minimumStock: number
   status: ProductStatus
+  variants?: ProductVariant[]
   imageUrl?: string
   createdAt: string
 }
@@ -150,12 +158,15 @@ export interface Sale {
   employeeName: string
   productId: string
   productName: string
+  variantId?: string
+  variantName?: string
   quantity: number
   unitPrice: number
+  unitCost: number
   subtotal: number
   total: number
   profit: number
-  paymentMethod: 'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Crédito'
+  paymentMethod: 'Efectivo'
   createdAt: string
 }
 
@@ -252,6 +263,17 @@ export function formatDateTime(date: string | Date) {
 
 export function createId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+// Resolves the effective price/cost of a product for a given variant.
+// When no variant is chosen (or the product has none), falls back to the base product price/cost.
+export function resolveProductPricing(product: Product, variantId?: string) {
+  const variant = variantId ? product.variants?.find((item) => item.id === variantId) : undefined
+  return {
+    price: variant?.price ?? product.price,
+    cost: variant?.cost ?? product.cost,
+    variantName: variant?.name ?? null,
+  }
 }
 
 export function getStartOfBusinessWeek(date: string | Date) {
@@ -369,7 +391,10 @@ export function loadAppData(): AppData {
         ...parsed.settings,
       },
       employees: parsed.employees ?? [],
-      products: parsed.products ?? [],
+      products: (parsed.products ?? []).map((product) => ({
+        ...product,
+        variants: Array.isArray(product.variants) ? product.variants : [],
+      })),
       vehicles: parsed.vehicles ?? [],
       vehicleMovements: parsed.vehicleMovements ?? [],
       inventoryMovements: parsed.inventoryMovements ?? [],

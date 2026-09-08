@@ -78,7 +78,7 @@ export const navigationItems = [
     label: 'Cortes',
     description: 'Cierres y comisiones',
     icon: ClipboardCheck,
-    audience: 'operator' as const,
+    audience: 'manager' as const,
     section: 'operacion' as const,
   },
   {
@@ -86,7 +86,7 @@ export const navigationItems = [
     label: 'Deudas / Ahorros',
     description: 'Movimientos y saldos',
     icon: CreditCard,
-    audience: 'operator' as const,
+    audience: 'manager' as const,
     section: 'operacion' as const,
   },
   {
@@ -94,7 +94,7 @@ export const navigationItems = [
     label: 'Pagos',
     description: 'Salarios, bonos y comisiones',
     icon: ReceiptText,
-    audience: 'operator' as const,
+    audience: 'manager' as const,
     section: 'operacion' as const,
   },
   {

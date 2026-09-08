@@ -7,13 +7,13 @@ import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency, formatDateTime } from '../lib/app-data.ts'
+import { formatCurrency, formatDateTime, resolveProductPricing } from '../lib/app-data.ts'
 
 const defaultForm = {
   employeeId: '',
   productId: '',
+  variantId: '',
   quantity: '1',
-  paymentMethod: 'Efectivo',
 }
 
 export function SalesPage() {
@@ -30,7 +30,7 @@ export function SalesPage() {
 
   useEffect(() => {
    if (sellerEmployeeId) {
-     setForm((current) => ({ ...current, employeeId: sellerEmployeeId, productId: '' }))
+     setForm((current) => ({ ...current, employeeId: sellerEmployeeId, productId: '', variantId: '' }))
    }
   }, [sellerEmployeeId])
 
@@ -52,8 +52,14 @@ export function SalesPage() {
     [form.productId, products],
   )
 
-  const subtotal = Number(form.quantity || 0) * (selectedProduct?.price ?? 0)
-  const profit = Number(form.quantity || 0) * ((selectedProduct?.price ?? 0) - (selectedProduct?.cost ?? 0))
+  const pricing = useMemo(
+    () => (selectedProduct ? resolveProductPricing(selectedProduct, form.variantId || undefined) : { price: 0, cost: 0, variantName: null }),
+    [selectedProduct, form.variantId],
+  )
+  const unitPrice = pricing.price
+  const unitCost = pricing.cost
+  const subtotal = Number(form.quantity || 0) * unitPrice
+  const profit = Number(form.quantity || 0) * (unitPrice - unitCost)
   const remainingAfterSale =
     selectedEmployeeStock && Number(form.quantity) > 0
       ? Math.max(selectedEmployeeStock.quantity - Number(form.quantity), 0)
@@ -74,9 +80,17 @@ export function SalesPage() {
     )
 
     if (!productStillAvailable) {
-      setForm((current) => ({ ...current, productId: '' }))
+      setForm((current) => ({ ...current, productId: '', variantId: '' }))
     }
   }, [employeeStocks, form.employeeId, form.productId])
+
+  // If the product has variants but none is chosen yet, pre-select the first one so the
+  // seller always picks a concrete price before saving.
+  useEffect(() => {
+    if (selectedProduct?.variants && selectedProduct.variants.length > 0 && !form.variantId) {
+      setForm((current) => ({ ...current, variantId: selectedProduct.variants![0].id }))
+    }
+  }, [selectedProduct, form.variantId])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -102,12 +116,15 @@ export function SalesPage() {
       employeeName: employee.name,
       productId: selectedProduct.id,
       productName: selectedProduct.name,
+      variantId: form.variantId || undefined,
+      variantName: pricing.variantName ?? undefined,
       quantity: Number(form.quantity),
-      unitPrice: selectedProduct.price,
+      unitPrice,
+      unitCost,
       subtotal,
       total: saleTotal,
       profit,
-      paymentMethod: form.paymentMethod as 'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Crédito',
+      paymentMethod: 'Efectivo',
     })
 
     if (responseError) {
@@ -119,14 +136,14 @@ export function SalesPage() {
       user: employee.name,
       action: 'Se registró una venta',
       module: 'Ventas',
-      record: `${selectedProduct.name} (${Number(form.quantity)})`,
+      record: `${selectedProduct.name}${pricing.variantName ? ` · ${pricing.variantName}` : ''} (${Number(form.quantity)})`,
       createdAt: new Date().toISOString(),
     })
 
     setForm(defaultForm)
     notifySuccess(
       'Venta registrada',
-      `${employee.name} vendió ${form.quantity} unidad(es) de ${selectedProduct.name}. Quedan ${Math.max((selectedEmployeeStock?.quantity ?? 0) - Number(form.quantity), 0)} en su corte.`,
+      `${employee.name} vendió ${form.quantity} × ${selectedProduct.name}${pricing.variantName ? ` (${pricing.variantName})` : ''} por ${formatCurrency(saleTotal)}. Quedan ${Math.max((selectedEmployeeStock?.quantity ?? 0) - Number(form.quantity), 0)} en su corte.`,
     )
   }
 
@@ -144,7 +161,7 @@ export function SalesPage() {
               <label className="mb-2 block text-sm font-medium text-slate-300">Empleado</label>
               <select
                 value={form.employeeId}
-                onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value, productId: '' }))}
+                onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value, productId: '', variantId: '' }))}
                 className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
                 disabled={role === 'seller'}
               >
@@ -156,25 +173,30 @@ export function SalesPage() {
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-300">Producto</label>
-              <select value={form.productId} onChange={(event) => setForm((current) => ({ ...current, productId: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
+              <select value={form.productId} onChange={(event) => setForm((current) => ({ ...current, productId: event.target.value, variantId: '' }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
                 <option value="">{selectedEmployee ? 'Selecciona producto asignado' : 'Selecciona primero al empleado'}</option>
                 {availableEmployeeStock.map((stock) => (
                   <option key={stock.id} value={stock.productId}>{stock.productName} · {stock.quantity} disponibles</option>
                 ))}
               </select>
             </div>
+            {selectedProduct?.variants && selectedProduct.variants.length > 0 ? (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Variedad / precio</label>
+                <select value={form.variantId} onChange={(event) => setForm((current) => ({ ...current, variantId: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
+                  {selectedProduct.variants.map((variant) => (
+                    <option key={variant.id} value={variant.id}>{variant.name} · {formatCurrency(variant.price)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-300">Cantidad</label>
               <input type="number" min="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none" />
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Método de pago</label>
-              <select value={form.paymentMethod} onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
-                <option>Efectivo</option>
-                <option>Transferencia</option>
-                <option>Tarjeta</option>
-                <option>Crédito</option>
-              </select>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
+              <p className="text-xs text-slate-400">Método de pago</p>
+              <p className="mt-1 text-sm font-medium text-white">Efectivo</p>
             </div>
             <div className="md:col-span-2">
               <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
@@ -216,12 +238,14 @@ export function SalesPage() {
             ) : null}
             <div className="md:col-span-2 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-slate-300"><Calculator className="h-4 w-4 text-sky-300" /><span className="text-sm">Subtotal</span></div>
-                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(subtotal)}</p>
+                <div className="flex items-center gap-2 text-slate-300"><Calculator className="h-4 w-4 text-sky-300" /><span className="text-sm">Precio unitario</span></div>
+                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(unitPrice)}</p>
+                {pricing.variantName ? <p className="mt-1 text-xs text-slate-400">{pricing.variantName}</p> : null}
               </div>
-              <div className="rounded-2xl bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-slate-300"><Receipt className="h-4 w-4 text-emerald-300" /><span className="text-sm">Total</span></div>
-                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(subtotal)}</p>
+              <div className="rounded-2xl border-2 border-emerald-400/40 bg-emerald-400/10 p-4">
+                <div className="flex items-center gap-2 text-emerald-100"><Receipt className="h-4 w-4 text-emerald-300" /><span className="text-sm font-semibold">Monto total</span></div>
+                <p className="mt-3 text-3xl font-bold text-white">{formatCurrency(subtotal)}</p>
+                <p className="mt-1 text-xs text-emerald-200/80">{form.quantity} × {formatCurrency(unitPrice)}</p>
               </div>
               <div className="rounded-2xl bg-slate-950/70 p-4">
                 <div className="flex items-center gap-2 text-slate-300"><CreditCard className="h-4 w-4 text-amber-300" /><span className="text-sm">Ganancia</span></div>
@@ -245,7 +269,7 @@ export function SalesPage() {
                 <div key={sale.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="font-medium text-white">{sale.productName}</p>
+                      <p className="font-medium text-white">{sale.productName}{sale.variantName ? ` · ${sale.variantName}` : ''}</p>
                       <p className="mt-1 text-sm text-slate-400">{sale.employeeName} · {sale.paymentMethod}</p>
                     </div>
                     <StatusBadge label="Completada" tone="success" />
