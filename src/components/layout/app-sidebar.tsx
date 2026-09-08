@@ -148,10 +148,10 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
       {isOpen ? (
         <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm lg:hidden" onClick={onClose}>
           <aside
-            className="h-full w-[88vw] max-w-[340px] border-r border-white/10 bg-slate-950 p-4 shadow-2xl shadow-slate-950/60"
+            className="flex h-full w-[88vw] max-w-[340px] flex-col border-r border-white/10 bg-slate-950 p-4 shadow-2xl shadow-slate-950/60"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-5 flex shrink-0 items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-300">
                   Doble PP
@@ -168,7 +168,7 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
               </button>
             </div>
 
-            <nav className="space-y-2">
+            <nav className="flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
               {navigationItems.filter((item) => canSeeItem(item.audience, role)).map((item) => {
                 const active = isActivePath(currentPath, item.path)
 
@@ -196,16 +196,24 @@ export function AppSidebar({ currentPath, isOpen, onClose }: AppSidebarProps) {
               })}
             </nav>
 
-            <Button
-              className="mt-5 w-full"
-              variant="secondary"
-              onClick={() => {
-                onClose()
-                void handleSignOut()
-              }}
-            >
-              Cerrar sesión
-            </Button>
+            <div className="shrink-0 border-t border-white/10 pt-4">
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3">
+                <p className="truncate text-sm font-semibold text-amber-100">{user?.email ?? 'Usuario autenticado'}</p>
+                <p className="mt-0.5 text-xs capitalize leading-5 text-amber-50/80">
+                  {role}
+                </p>
+              </div>
+              <Button
+                className="mt-3 w-full"
+                variant="secondary"
+                onClick={() => {
+                  onClose()
+                  void handleSignOut()
+                }}
+              >
+                Cerrar sesión
+              </Button>
+            </div>
           </aside>
         </div>
       ) : null}
