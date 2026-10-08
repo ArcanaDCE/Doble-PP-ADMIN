@@ -22,7 +22,7 @@ export const navigationItems = [
     label: 'Dashboard',
     description: 'Resumen general y actividad',
     icon: Gauge,
-    audience: 'all' as const,
+    audience: 'manager' as const,
     section: 'general' as const,
   },
   {

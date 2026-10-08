@@ -92,6 +92,10 @@ interface AppDataContextValue {
 
 const AppDataContext = createContext<AppDataContextValue | undefined>(undefined)
 
+function roundMoney(amount: number) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100
+}
+
 export function AppDataProvider({ children }: PropsWithChildren) {
   const remoteEnabled = hasRemoteAppDataConfig()
   const [data, setData] = useState<AppData>(() => loadAppData())
@@ -245,12 +249,38 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         return current
       }
 
+      const normalizedLines: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>> = []
       const quantitiesByProduct = new Map<string, number>()
       for (const line of saleLines) {
-        if (!Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.total) || line.total < 0) {
-          errorMessage = 'Revisa las cantidades e importes de los renglones.'
+        const product = current.products.find((item) => item.id === line.productId)
+        const variant = product?.variants?.find((item) => item.id === line.variantId)
+        const unitCost = variant?.cost ?? product?.cost
+        if (
+          !product ||
+          !Number.isInteger(line.quantity) ||
+          line.quantity < 1 ||
+          !Number.isFinite(line.unitPrice) ||
+          line.unitPrice < 0 ||
+          unitCost === undefined ||
+          !Number.isFinite(unitCost) ||
+          Boolean(line.variantId && !variant) ||
+          (Boolean(product.variants?.length) && !variant)
+        ) {
+          errorMessage = 'Revisa el producto, variedad, cantidad y precio cobrado de cada renglón.'
           return current
         }
+        const total = roundMoney(line.quantity * line.unitPrice)
+        normalizedLines.push({
+          ...line,
+          productName: product.name,
+          variantId: variant?.id,
+          variantName: variant?.name,
+          unitCost,
+          subtotal: total,
+          total,
+          profit: roundMoney(line.quantity * (line.unitPrice - unitCost)),
+          paymentMethod: 'Efectivo',
+        })
         quantitiesByProduct.set(line.productId, (quantitiesByProduct.get(line.productId) ?? 0) + line.quantity)
       }
 
@@ -269,13 +299,13 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
       const now = new Date().toISOString()
       const saleGroupId = createId('sale_group')
-      const groupedSales: Sale[] = saleLines.map((line) => ({
+      const groupedSales: Sale[] = normalizedLines.map((line) => ({
         ...line,
         saleGroupId,
         id: createId('sale'),
         createdAt: now,
       }))
-      const salesTotal = saleLines.reduce((sum, line) => sum + line.total, 0)
+      const salesTotal = normalizedLines.reduce((sum, line) => sum + line.total, 0)
       const movements: EmployeeStockMovement[] = []
       for (const [productId, quantity] of quantitiesByProduct) {
         const product = current.products.find((item) => item.id === productId)
@@ -283,7 +313,7 @@ export function AppDataProvider({ children }: PropsWithChildren) {
           errorMessage = 'Uno de los productos seleccionados ya no está disponible.'
           return current
         }
-        const productTotal = saleLines
+        const productTotal = normalizedLines
           .filter((line) => line.productId === productId)
           .reduce((sum, line) => sum + line.total, 0)
         movements.push({

@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatCard } from '../components/ui/stat-card.tsx'
-import { formatCurrency, formatDate } from '../lib/app-data.ts'
+import { countSaleTransactions, formatCurrency, formatDate } from '../lib/app-data.ts'
 
 function getDateKey(value: string | Date) {
   return new Date(value).toISOString().slice(0, 10)
@@ -62,7 +62,7 @@ export function ReportsPage() {
           name: employee.name,
           totalSales: employeeSales.reduce((sum, sale) => sum + sale.total, 0),
           totalProfit: employeeSales.reduce((sum, sale) => sum + sale.profit, 0),
-          salesCount: employeeSales.length,
+          salesCount: countSaleTransactions(employeeSales),
           paymentsCount: employeePayments.length,
         }
       })
@@ -78,11 +78,12 @@ export function ReportsPage() {
   const vehiclesInMaintenance = vehicles.filter((vehicle) => vehicle.status === 'Mantenimiento').length
   const recentVehicleMovements = vehicleMovements.length
 
+  const todaySales = sales.filter((sale) => getDateKey(sale.createdAt) === getDateKey(new Date()))
   const reportCards = [
     {
       label: 'Ventas de hoy',
       value: formatCurrency(totals.salesToday),
-      trend: sales.length > 0 ? `${sales.length} operaciones registradas` : 'Sin ventas registradas',
+      trend: todaySales.length > 0 ? `${countSaleTransactions(todaySales)} operaciones registradas` : 'Sin ventas registradas',
       accent: 'emerald' as const,
       badge: 'Ingresos',
     },

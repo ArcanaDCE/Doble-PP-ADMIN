@@ -14,9 +14,10 @@ type SaleLineForm = {
   productId: string
   variantId: string
   quantity: string
+  unitPrice: string
 }
 
-type SaleLineDraft = SaleLineForm & {
+type SaleLineDraft = Omit<SaleLineForm, 'unitPrice'> & {
   product: Product | undefined
   unitPrice: number
   unitCost: number
@@ -26,7 +27,7 @@ type SaleLineDraft = SaleLineForm & {
 }
 
 function createSaleLine(): SaleLineForm {
-  return { id: createId('sale_line'), productId: '', variantId: '', quantity: '1' }
+  return { id: createId('sale_line'), productId: '', variantId: '', quantity: '1', unitPrice: '' }
 }
 
 const defaultForm = {
@@ -68,18 +69,23 @@ export function SalesPage() {
           ? resolveProductPricing(product, line.variantId || undefined)
           : { price: 0, cost: 0, variantName: null }
         const quantity = Number(line.quantity)
+        const unitPrice = Number(line.unitPrice)
 
         return {
           ...line,
           product,
-          unitPrice: pricing.price,
+          unitPrice,
           unitCost: pricing.cost,
           variantName: pricing.variantName,
-          total: Number.isInteger(quantity) && quantity > 0 ? quantity * pricing.price : 0,
-          profit: Number.isInteger(quantity) && quantity > 0 ? quantity * (pricing.price - pricing.cost) : 0,
+          total: Number.isInteger(quantity) && quantity > 0 && Number.isFinite(unitPrice)
+            ? Math.round((quantity * unitPrice + Number.EPSILON) * 100) / 100
+            : 0,
+          profit: Number.isInteger(quantity) && quantity > 0 && Number.isFinite(unitPrice)
+            ? Math.round((quantity * (unitPrice - pricing.cost) + Number.EPSILON) * 100) / 100
+            : 0,
         }
       }),
-    [employeeStocks, form.employeeId, form.lines, products],
+    [form.lines, products],
   )
 
   const quantitiesByProduct = useMemo(() => {
@@ -102,11 +108,14 @@ export function SalesPage() {
     const stock = employeeStocks.find((item) => item.employeeId === form.employeeId && item.productId === productId)
     return !stock || quantity > stock.quantity
   })
+  const hasBlankPrice = form.lines.some((line) => line.productId && line.unitPrice.trim() === '')
   const hasInvalidLine = lineDrafts.length === 0 || lineDrafts.some((line) => {
     const quantity = Number(line.quantity)
+    const unitPrice = Number(line.unitPrice)
     const hasRequiredVariant = !line.product?.variants?.length || line.product.variants.some((variant) => variant.id === line.variantId)
-    return !line.product || !Number.isInteger(quantity) || quantity < 1 || !hasRequiredVariant
-  })
+    return !line.product || !Number.isInteger(quantity) || quantity < 1 ||
+      !Number.isFinite(unitPrice) || unitPrice < 0 || !hasRequiredVariant
+  }) || hasBlankPrice
 
   const saleGroups = useMemo(() => {
     const groups = new Map<string, Sale[]>()
@@ -227,7 +236,10 @@ export function SalesPage() {
                       <label className="mb-2 block text-xs font-medium text-slate-400">Producto</label>
                       <select
                         value={line.productId}
-                        onChange={(event) => updateLine(line.id, { productId: event.target.value, variantId: '' })}
+                        onChange={(event) => {
+                          const product = products.find((item) => item.id === event.target.value)
+                          updateLine(line.id, { productId: event.target.value, variantId: '', unitPrice: product ? String(product.price) : '' })
+                        }}
                         className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-200 outline-none"
                         disabled={!form.employeeId}
                       >
@@ -242,7 +254,13 @@ export function SalesPage() {
                         <label className="mb-2 block text-xs font-medium text-slate-400">Variedad / precio</label>
                         <select
                           value={line.variantId}
-                          onChange={(event) => updateLine(line.id, { variantId: event.target.value })}
+                          onChange={(event) => {
+                            const selectedVariant = variants.find((variant) => variant.id === event.target.value)
+                            updateLine(line.id, {
+                              variantId: event.target.value,
+                              unitPrice: String(selectedVariant?.price ?? draft.product?.price ?? ''),
+                            })
+                          }}
                           className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-200 outline-none"
                         >
                           <option value="">Selecciona precio</option>
@@ -262,6 +280,24 @@ export function SalesPage() {
                         onChange={(event) => updateLine(line.id, { quantity: event.target.value })}
                         className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
                       />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-slate-400">Precio unitario cobrado</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={line.unitPrice}
+                        onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-sky-400/30 bg-sky-400/5 px-3 text-sm font-semibold text-white outline-none focus:border-sky-300"
+                        aria-label={`Precio unitario cobrado, renglón ${index + 1}`}
+                      />
+                      {draft.product ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Precio de lista: {formatCurrency(draft.product.price)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex items-end justify-between rounded-xl bg-slate-950/50 px-3 py-2">
                       <div>
@@ -350,7 +386,7 @@ export function SalesPage() {
                         <div key={sale.id} className="flex items-start justify-between gap-3 text-sm">
                           <span className="text-slate-300">
                             {sale.quantity} × {sale.productName}{sale.variantName ? ` · ${sale.variantName}` : ''}
-                            <span className="block text-xs text-slate-500">{formatCurrency(sale.unitPrice)} c/u</span>
+                            <span className="block text-xs text-slate-500">{formatCurrency(sale.unitPrice)} c/u · cobrado</span>
                           </span>
                           <span className="font-medium text-white">{formatCurrency(sale.total)}</span>
                         </div>

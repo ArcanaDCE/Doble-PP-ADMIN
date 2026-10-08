@@ -171,6 +171,14 @@ export interface Sale {
   createdAt: string
 }
 
+export function getSaleTransactionKey(sale: Sale) {
+  return sale.saleGroupId ?? sale.id
+}
+
+export function countSaleTransactions(sales: Sale[]) {
+  return new Set(sales.map(getSaleTransactionKey)).size
+}
+
 export interface Payment {
   id: string
   employeeId: string

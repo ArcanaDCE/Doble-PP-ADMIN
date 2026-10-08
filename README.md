@@ -61,6 +61,17 @@ on conflict (id) do nothing;
 
 Sin este paso, la app funciona por navegador (localStorage) y los cambios no se comparten entre dispositivos.
 
+## Registrar ventas con descuentos manuales
+
+En **Ventas**, cada renglón representa un producto, una cantidad y el precio unitario realmente cobrado. El precio se propone desde el catálogo (o la variedad elegida), pero el vendedor puede modificarlo para registrar un descuento.
+
+Para vender cinco unidades del mismo producto, una a precio normal de `$300` y cuatro con descuento a `$250`, agrega dos renglones:
+
+- 1 unidad con precio unitario `$300`
+- 4 unidades con precio unitario `$250`
+
+La página muestra el total de `$1,300` antes de guardar. Valida el stock total de cinco unidades, guarda los renglones bajo una sola operación, y usa los importes y precios cobrados para ventas, ganancia, inventario y corte. El único método de pago es efectivo.
+
 ## Cómo probar acceso interno
 
 1. Ejecuta [start-dev.cmd](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/start-dev.cmd>).

@@ -8,7 +8,7 @@ import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatCard } from '../components/ui/stat-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency, formatDateTime, formatDate, getStartOfBusinessWeek, isSameBusinessWeek } from '../lib/app-data.ts'
+import { countSaleTransactions, formatCurrency, formatDateTime, formatDate, getStartOfBusinessWeek, isSameBusinessWeek } from '../lib/app-data.ts'
 
 const defaultForm = {
   employeeId: '',
@@ -160,7 +160,7 @@ export function CutsPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Cortes cerrados" value={String(cuts.length)} trend="Historial acumulado" accent="sky" />
         <StatCard label="Comisión X" value={`${settings.commissionRuleAmount.toLocaleString('es-MX')}`} trend={`+${formatCurrency(settings.commissionRuleBonus)} por X`} accent="violet" />
-        <StatCard label="Ventas abiertas" value={String(sales.length)} trend="Ventas registradas" accent="emerald" />
+        <StatCard label="Ventas abiertas" value={String(countSaleTransactions(sales))} trend="Operaciones registradas" accent="emerald" />
         <StatCard label="Repartidores activos" value={String(employees.length)} trend="Con corte disponible" accent="amber" />
       </div>
 
