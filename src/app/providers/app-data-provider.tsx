@@ -62,6 +62,7 @@ interface AppDataContextValue {
   assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => string | null
   adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => string | null
   addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => string | null
+  addSales: (sales: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) => string | null
   closeCut: (cut: Omit<EmployeeCut, 'id' | 'createdAt'> & { createdAt?: string }) => string | null
   addExpense: (expense: Omit<Expense, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'approvedBy'> & { status?: ExpenseStatus }) => string | null
   updateExpenseStatus: (expenseId: string, status: ExpenseStatus, approvedBy: string) => string | null
@@ -227,6 +228,100 @@ export function AppDataProvider({ children }: PropsWithChildren) {
       paymentsTotal,
     }
   }, [data])
+
+  function addSales(saleLines: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) {
+    let errorMessage: string | null = null
+
+    setData((current) => {
+      if (saleLines.length === 0) {
+        errorMessage = 'Agrega al menos un renglón a la venta.'
+        return current
+      }
+
+      const employeeId = saleLines[0].employeeId
+      const employee = current.employees.find((item) => item.id === employeeId)
+      if (!employee || saleLines.some((line) => line.employeeId !== employeeId)) {
+        errorMessage = 'El empleado seleccionado ya no está disponible.'
+        return current
+      }
+
+      const quantitiesByProduct = new Map<string, number>()
+      for (const line of saleLines) {
+        if (!Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.total) || line.total < 0) {
+          errorMessage = 'Revisa las cantidades e importes de los renglones.'
+          return current
+        }
+        quantitiesByProduct.set(line.productId, (quantitiesByProduct.get(line.productId) ?? 0) + line.quantity)
+      }
+
+      for (const [productId, quantity] of quantitiesByProduct) {
+        const product = current.products.find((item) => item.id === productId)
+        const stock = current.employeeStocks.find((item) => item.employeeId === employeeId && item.productId === productId)
+        if (!product) {
+          errorMessage = 'Uno de los productos seleccionados ya no está disponible.'
+          return current
+        }
+        if (!stock || stock.quantity < quantity) {
+          errorMessage = `Stock insuficiente de ${product.name}; se necesitan ${quantity} unidades.`
+          return current
+        }
+      }
+
+      const now = new Date().toISOString()
+      const saleGroupId = createId('sale_group')
+      const groupedSales: Sale[] = saleLines.map((line) => ({
+        ...line,
+        saleGroupId,
+        id: createId('sale'),
+        createdAt: now,
+      }))
+      const salesTotal = saleLines.reduce((sum, line) => sum + line.total, 0)
+      const movements: EmployeeStockMovement[] = []
+      for (const [productId, quantity] of quantitiesByProduct) {
+        const product = current.products.find((item) => item.id === productId)
+        if (!product) {
+          errorMessage = 'Uno de los productos seleccionados ya no está disponible.'
+          return current
+        }
+        const productTotal = saleLines
+          .filter((line) => line.productId === productId)
+          .reduce((sum, line) => sum + line.total, 0)
+        movements.push({
+          id: createId('employee_stock_movement'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          productId,
+          productName: product.name,
+          type: 'Venta' as const,
+          quantity,
+          notes: `Venta registrada por ${formatCurrency(productTotal)}`,
+          createdAt: now,
+        })
+      }
+
+      return {
+        ...current,
+        sales: [...groupedSales, ...current.sales],
+        employeeStocks: current.employeeStocks.map((stock) => {
+          const quantity = stock.employeeId === employeeId ? quantitiesByProduct.get(stock.productId) : undefined
+          if (quantity === undefined) return stock
+          return {
+            ...stock,
+            employeeName: employee.name,
+            quantity: stock.quantity - quantity,
+            totalSold: stock.totalSold + quantity,
+            updatedAt: now,
+          }
+        }),
+        employeeStockMovements: [...movements, ...current.employeeStockMovements],
+        employees: current.employees.map((item) =>
+          item.id === employeeId ? { ...item, sales: item.sales + salesTotal } : item,
+        ),
+      } satisfies AppData
+    })
+
+    return errorMessage
+  }
 
   const value = useMemo<AppDataContextValue>(() => ({
     data,
@@ -737,70 +832,8 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
       return errorMessage
     },
-    addSale: (sale) => {
-      let errorMessage: string | null = null
-
-      setData((current) => {
-        const employee = current.employees.find((item) => item.id === sale.employeeId)
-        const product = current.products.find((item) => item.id === sale.productId)
-        const employeeStock = current.employeeStocks.find(
-          (item) => item.employeeId === sale.employeeId && item.productId === sale.productId,
-        )
-
-        if (!employee) {
-          errorMessage = 'El empleado seleccionado ya no está disponible.'
-          return current
-        }
-
-        if (!product) {
-          errorMessage = 'El producto seleccionado ya no está disponible.'
-          return current
-        }
-
-        if (!employeeStock || employeeStock.quantity < sale.quantity) {
-          errorMessage = 'El empleado no tiene stock suficiente de ese producto para registrar la venta.'
-          return current
-        }
-
-        const now = new Date().toISOString()
-        const updatedEmployeeStock: EmployeeStock = {
-          ...employeeStock,
-          employeeName: employee.name,
-          productName: product.name,
-          quantity: employeeStock.quantity - sale.quantity,
-          totalSold: employeeStock.totalSold + sale.quantity,
-          updatedAt: now,
-        }
-        const employeeMovement: EmployeeStockMovement = {
-          id: createId('employee_stock_movement'),
-          employeeId: employee.id,
-          employeeName: employee.name,
-          productId: product.id,
-          productName: product.name,
-          type: 'Venta',
-          quantity: sale.quantity,
-          notes: `Venta registrada por ${formatCurrency(sale.total)}`,
-          createdAt: now,
-        }
-
-        return {
-          ...current,
-          sales: [
-            { ...sale, id: createId('sale'), createdAt: now },
-            ...current.sales,
-          ],
-          employeeStocks: current.employeeStocks.map((item) =>
-            item.id === employeeStock.id ? updatedEmployeeStock : item,
-          ),
-          employeeStockMovements: [employeeMovement, ...current.employeeStockMovements],
-          employees: current.employees.map((item) =>
-            item.id === sale.employeeId ? { ...item, sales: item.sales + sale.total } : item,
-          ),
-        } satisfies AppData
-      })
-
-      return errorMessage
-    },
+    addSale: (sale) => addSales([sale]),
+    addSales,
     closeCut: (cut) => {
       let errorMessage: string | null = null
 

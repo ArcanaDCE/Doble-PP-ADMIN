@@ -160,6 +160,7 @@ export interface Sale {
   productName: string
   variantId?: string
   variantName?: string
+  saleGroupId?: string
   quantity: number
   unitPrice: number
   unitCost: number

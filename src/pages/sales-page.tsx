@@ -1,4 +1,4 @@
-import { Calculator, CreditCard, Receipt } from 'lucide-react'
+import { Calculator, CreditCard, Plus, Receipt, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAppData } from '../app/providers/app-data-provider.tsx'
 import { useAuth } from '../app/providers/auth-provider.tsx'
@@ -7,143 +7,175 @@ import { Button } from '../components/ui/button.tsx'
 import { PageHeader } from '../components/ui/page-header.tsx'
 import { SectionCard } from '../components/ui/section-card.tsx'
 import { StatusBadge } from '../components/ui/status-badge.tsx'
-import { formatCurrency, formatDateTime, resolveProductPricing } from '../lib/app-data.ts'
+import { createId, formatCurrency, formatDateTime, resolveProductPricing, type Product, type Sale } from '../lib/app-data.ts'
+
+type SaleLineForm = {
+  id: string
+  productId: string
+  variantId: string
+  quantity: string
+}
+
+type SaleLineDraft = SaleLineForm & {
+  product: Product | undefined
+  unitPrice: number
+  unitCost: number
+  variantName: string | null
+  total: number
+  profit: number
+}
+
+function createSaleLine(): SaleLineForm {
+  return { id: createId('sale_line'), productId: '', variantId: '', quantity: '1' }
+}
 
 const defaultForm = {
   employeeId: '',
-  productId: '',
-  variantId: '',
-  quantity: '1',
+  lines: [createSaleLine()],
 }
 
 export function SalesPage() {
-  const { employees, products, employeeStocks, sales, addSale, addActivity } = useAppData()
+  const { employees, products, employeeStocks, sales, addSales, addActivity } = useAppData()
   const { role, user } = useAuth()
   const { notifySuccess, notifyError } = useFeedback()
   const [form, setForm] = useState(defaultForm)
 
   const sellerEmployeeId = role === 'seller' ? user?.employeeId : undefined
   const employeeOptions = useMemo(
-   () => (sellerEmployeeId ? employees.filter((employee) => employee.id === sellerEmployeeId) : employees),
-   [employees, sellerEmployeeId],
+    () => (sellerEmployeeId ? employees.filter((employee) => employee.id === sellerEmployeeId) : employees),
+    [employees, sellerEmployeeId],
   )
-
-  useEffect(() => {
-   if (sellerEmployeeId) {
-     setForm((current) => ({ ...current, employeeId: sellerEmployeeId, productId: '', variantId: '' }))
-   }
-  }, [sellerEmployeeId])
-
   const selectedEmployee = useMemo(
-   () => employees.find((employee) => employee.id === form.employeeId),
-   [employees, form.employeeId],
+    () => employees.find((employee) => employee.id === form.employeeId),
+    [employees, form.employeeId],
   )
   const availableEmployeeStock = useMemo(
-   () => employeeStocks.filter((item) => item.employeeId === form.employeeId && item.quantity > 0),
-   [employeeStocks, form.employeeId],
+    () => employeeStocks.filter((item) => item.employeeId === form.employeeId && item.quantity > 0),
+    [employeeStocks, form.employeeId],
   )
-  const selectedEmployeeStock = useMemo(
-   () => employeeStocks.find((item) => item.employeeId === form.employeeId && item.productId === form.productId),
-   [employeeStocks, form.employeeId, form.productId],
-  )
-
-  const selectedProduct = useMemo(
-   () => products.find((product) => product.id === form.productId),
-    [form.productId, products],
-  )
-
-  const pricing = useMemo(
-    () => (selectedProduct ? resolveProductPricing(selectedProduct, form.variantId || undefined) : { price: 0, cost: 0, variantName: null }),
-    [selectedProduct, form.variantId],
-  )
-  const unitPrice = pricing.price
-  const unitCost = pricing.cost
-  const subtotal = Number(form.quantity || 0) * unitPrice
-  const profit = Number(form.quantity || 0) * (unitPrice - unitCost)
-  const remainingAfterSale =
-    selectedEmployeeStock && Number(form.quantity) > 0
-      ? Math.max(selectedEmployeeStock.quantity - Number(form.quantity), 0)
-      : selectedEmployeeStock?.quantity ?? 0
 
   useEffect(() => {
-    if (!form.employeeId) {
-      setForm((current) => (current.productId ? { ...current, productId: '' } : current))
-      return
+    if (sellerEmployeeId) {
+      setForm({ employeeId: sellerEmployeeId, lines: [createSaleLine()] })
     }
+  }, [sellerEmployeeId])
 
-    if (!form.productId) {
-      return
+  const lineDrafts = useMemo<SaleLineDraft[]>(
+    () =>
+      form.lines.map((line) => {
+        const product = products.find((item) => item.id === line.productId)
+        const pricing = product
+          ? resolveProductPricing(product, line.variantId || undefined)
+          : { price: 0, cost: 0, variantName: null }
+        const quantity = Number(line.quantity)
+
+        return {
+          ...line,
+          product,
+          unitPrice: pricing.price,
+          unitCost: pricing.cost,
+          variantName: pricing.variantName,
+          total: Number.isInteger(quantity) && quantity > 0 ? quantity * pricing.price : 0,
+          profit: Number.isInteger(quantity) && quantity > 0 ? quantity * (pricing.price - pricing.cost) : 0,
+        }
+      }),
+    [employeeStocks, form.employeeId, form.lines, products],
+  )
+
+  const quantitiesByProduct = useMemo(() => {
+    const quantities = new Map<string, number>()
+    for (const line of lineDrafts) {
+      if (line.productId && Number.isInteger(Number(line.quantity)) && Number(line.quantity) > 0) {
+        quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + Number(line.quantity))
+      }
     }
+    return quantities
+  }, [lineDrafts])
 
-    const productStillAvailable = employeeStocks.some(
-      (item) => item.employeeId === form.employeeId && item.productId === form.productId && item.quantity > 0,
-    )
+  const totalUnits = lineDrafts.reduce((sum, line) => {
+    const quantity = Number(line.quantity)
+    return sum + (Number.isInteger(quantity) && quantity > 0 ? quantity : 0)
+  }, 0)
+  const saleTotal = lineDrafts.reduce((sum, line) => sum + line.total, 0)
+  const totalProfit = lineDrafts.reduce((sum, line) => sum + line.profit, 0)
+  const stockError = [...quantitiesByProduct.entries()].find(([productId, quantity]) => {
+    const stock = employeeStocks.find((item) => item.employeeId === form.employeeId && item.productId === productId)
+    return !stock || quantity > stock.quantity
+  })
+  const hasInvalidLine = lineDrafts.length === 0 || lineDrafts.some((line) => {
+    const quantity = Number(line.quantity)
+    const hasRequiredVariant = !line.product?.variants?.length || line.product.variants.some((variant) => variant.id === line.variantId)
+    return !line.product || !Number.isInteger(quantity) || quantity < 1 || !hasRequiredVariant
+  })
 
-    if (!productStillAvailable) {
-      setForm((current) => ({ ...current, productId: '', variantId: '' }))
+  const saleGroups = useMemo(() => {
+    const groups = new Map<string, Sale[]>()
+    for (const sale of sales) {
+      const groupKey = sale.saleGroupId ?? sale.id
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), sale])
     }
-  }, [employeeStocks, form.employeeId, form.productId])
+    return [...groups.values()]
+  }, [sales])
 
-  // If the product has variants but none is chosen yet, pre-select the first one so the
-  // seller always picks a concrete price before saving.
-  useEffect(() => {
-    if (selectedProduct?.variants && selectedProduct.variants.length > 0 && !form.variantId) {
-      setForm((current) => ({ ...current, variantId: selectedProduct.variants![0].id }))
-    }
-  }, [selectedProduct, form.variantId])
+  function updateLine(lineId: string, updates: Partial<SaleLineForm>) {
+    setForm((current) => ({
+      ...current,
+      lines: current.lines.map((line) => (line.id === lineId ? { ...line, ...updates } : line)),
+    }))
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!form.employeeId || !form.productId || Number(form.quantity) <= 0 || !selectedProduct) {
-      notifyError('No se pudo registrar la venta', 'Selecciona empleado, producto y una cantidad válida.')
+    if (!form.employeeId || !selectedEmployee || hasInvalidLine) {
+      notifyError('Venta incompleta', 'Selecciona un vendedor, producto, variedad y cantidad válida en cada renglón.')
+      return
+    }
+    if (stockError) {
+      const product = products.find((item) => item.id === stockError[0])
+      notifyError('Stock insuficiente', `Solo hay ${employeeStocks.find((item) => item.employeeId === form.employeeId && item.productId === stockError[0])?.quantity ?? 0} unidades de ${product?.name ?? 'este producto'} en el stock del vendedor.`)
       return
     }
 
-    if (!selectedEmployeeStock || selectedEmployeeStock.quantity < Number(form.quantity)) {
-      notifyError('Stock insuficiente', 'El empleado no tiene unidades suficientes de ese producto para registrar la venta.')
-      return
-    }
-
-    const employee = employees.find((item) => item.id === form.employeeId)
-    if (!employee) {
-      notifyError('Empleado no disponible', 'Selecciona nuevamente al vendedor antes de guardar.')
-      return
-    }
-
-    const saleTotal = subtotal
-    const responseError = addSale({
-      employeeId: employee.id,
-      employeeName: employee.name,
-      productId: selectedProduct.id,
-      productName: selectedProduct.name,
-      variantId: form.variantId || undefined,
-      variantName: pricing.variantName ?? undefined,
-      quantity: Number(form.quantity),
-      unitPrice,
-      unitCost,
-      subtotal,
-      total: saleTotal,
-      profit,
-      paymentMethod: 'Efectivo',
+    const saleLines = lineDrafts.flatMap((line) => {
+      if (!line.product) return []
+      return [{
+        employeeId: selectedEmployee.id,
+        employeeName: selectedEmployee.name,
+        productId: line.product.id,
+        productName: line.product.name,
+        variantId: line.variantId || undefined,
+        variantName: line.variantName ?? undefined,
+        quantity: Number(line.quantity),
+        unitPrice: line.unitPrice,
+        unitCost: line.unitCost,
+        subtotal: line.total,
+        total: line.total,
+        profit: line.profit,
+        paymentMethod: 'Efectivo' as const,
+      }]
     })
 
+    const responseError = addSales(saleLines)
     if (responseError) {
       notifyError('No se pudo registrar la venta', responseError)
       return
     }
 
+    const lineSummary = lineDrafts
+      .map((line) => `${line.quantity} × ${line.product?.name ?? 'Producto'}${line.variantName ? ` (${line.variantName})` : ''}`)
+      .join(', ')
     addActivity({
-      user: employee.name,
+      user: selectedEmployee.name,
       action: 'Se registró una venta',
       module: 'Ventas',
-      record: `${selectedProduct.name}${pricing.variantName ? ` · ${pricing.variantName}` : ''} (${Number(form.quantity)})`,
+      record: `${lineSummary} · ${formatCurrency(saleTotal)}`,
       createdAt: new Date().toISOString(),
     })
 
-    setForm(defaultForm)
+    setForm({ employeeId: form.employeeId, lines: [createSaleLine()] })
     notifySuccess(
       'Venta registrada',
-      `${employee.name} vendió ${form.quantity} × ${selectedProduct.name}${pricing.variantName ? ` (${pricing.variantName})` : ''} por ${formatCurrency(saleTotal)}. Quedan ${Math.max((selectedEmployeeStock?.quantity ?? 0) - Number(form.quantity), 0)} en su corte.`,
+      `${selectedEmployee.name}: ${totalUnits} unidad(es) por ${formatCurrency(saleTotal)} en efectivo. El stock se rebajó correctamente.`,
     )
   }
 
@@ -151,136 +183,187 @@ export function SalesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Ventas y cortes"
-        description="Registra ventas reales y rebaja automáticamente el corte del empleado según el stock que tenga asignado."
+        description="Agrega varios renglones, incluso el mismo producto con precios distintos. El total y el stock se calculan juntos."
       />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <SectionCard title="Registrar venta" description="Completa el producto, el vendedor, la cantidad y el método de pago. Cada venta rebaja el corte del empleado automáticamente.">
-          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+        <SectionCard title="Registrar venta" description="Puedes repetir un producto con otra variedad/precio. La venta se guarda como un solo grupo y el corte suma sus importes reales.">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Empleado</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Vendedor</label>
               <select
                 value={form.employeeId}
-                onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value, productId: '', variantId: '' }))}
+                onChange={(event) => setForm({ employeeId: event.target.value, lines: [createSaleLine()] })}
                 className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none"
                 disabled={role === 'seller'}
               >
-                <option value="">Selecciona empleado</option>
+                <option value="">Selecciona vendedor</option>
                 {employeeOptions.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employee.name}</option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Producto</label>
-              <select value={form.productId} onChange={(event) => setForm((current) => ({ ...current, productId: event.target.value, variantId: '' }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
-                <option value="">{selectedEmployee ? 'Selecciona producto asignado' : 'Selecciona primero al empleado'}</option>
-                {availableEmployeeStock.map((stock) => (
-                  <option key={stock.id} value={stock.productId}>{stock.productName} · {stock.quantity} disponibles</option>
-                ))}
-              </select>
-            </div>
-            {selectedProduct?.variants && selectedProduct.variants.length > 0 ? (
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Variedad / precio</label>
-                <select value={form.variantId} onChange={(event) => setForm((current) => ({ ...current, variantId: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-300 outline-none">
-                  {selectedProduct.variants.map((variant) => (
-                    <option key={variant.id} value={variant.id}>{variant.name} · {formatCurrency(variant.price)}</option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Cantidad</label>
-              <input type="number" min="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none" />
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
-              <p className="text-xs text-slate-400">Método de pago</p>
-              <p className="mt-1 text-sm font-medium text-white">Efectivo</p>
-            </div>
-            <div className="md:col-span-2">
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                {!selectedEmployee
-                  ? 'Selecciona un empleado para ver el stock que tiene asignado.'
-                  : selectedEmployeeStock
-                    ? `Stock con ${selectedEmployee.name}: ${selectedEmployeeStock.quantity} unidades disponibles. Si guardas esta venta, su corte quedará en ${remainingAfterSale}.`
-                    : 'Este empleado todavía no tiene stock asignado de ese producto.'}
-              </div>
-            </div>
-            {selectedEmployee && availableEmployeeStock.length === 0 ? (
-              <div className="md:col-span-2 rounded-2xl border border-dashed border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
-                {selectedEmployee.name} todavía no tiene inventario asignado. Entrégale producto desde su perfil antes de registrar ventas.
-              </div>
-            ) : null}
-            {selectedEmployee && availableEmployeeStock.length > 0 ? (
-              <div className="md:col-span-2 rounded-[24px] border border-sky-400/15 bg-sky-400/10 p-4">
-                <p className="text-sm font-semibold text-white">Corte actual de {selectedEmployee.name}</p>
-                <p className="mt-1 text-sm text-slate-300">
-                  Estos son los productos que el empleado tiene disponibles para vender. Al registrar la venta, se rebajan de aquí.
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {availableEmployeeStock.map((stock) => (
-                    <div key={stock.id} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-medium text-white">{stock.productName}</p>
-                        <StatusBadge
-                          label={`${stock.quantity} disponible${stock.quantity === 1 ? '' : 's'}`}
-                          tone={stock.quantity > 0 ? 'success' : 'neutral'}
-                        />
-                      </div>
-                      <p className="mt-2 text-xs text-slate-400">
-                        Asignado: {stock.totalAssigned} · Vendido: {stock.totalSold}
-                      </p>
+
+            {form.lines.map((line, index) => {
+              const draft = lineDrafts[index]
+              const variants = draft.product?.variants ?? []
+              return (
+                <div key={line.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">Renglón {index + 1}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Quitar renglón ${index + 1}`}
+                      onClick={() => setForm((current) => ({ ...current, lines: current.lines.filter((item) => item.id !== line.id) }))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Quitar
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-slate-400">Producto</label>
+                      <select
+                        value={line.productId}
+                        onChange={(event) => updateLine(line.id, { productId: event.target.value, variantId: '' })}
+                        className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-200 outline-none"
+                        disabled={!form.employeeId}
+                      >
+                        <option value="">Selecciona producto asignado</option>
+                        {availableEmployeeStock.map((stock) => (
+                          <option key={stock.id} value={stock.productId}>{stock.productName} · {stock.quantity} disponibles</option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
+                    {variants.length > 0 ? (
+                      <div>
+                        <label className="mb-2 block text-xs font-medium text-slate-400">Variedad / precio</label>
+                        <select
+                          value={line.variantId}
+                          onChange={(event) => updateLine(line.id, { variantId: event.target.value })}
+                          className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-200 outline-none"
+                        >
+                          <option value="">Selecciona precio</option>
+                          {variants.map((variant) => (
+                            <option key={variant.id} value={variant.id}>{variant.name} · {formatCurrency(variant.price)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-slate-400">Cantidad</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.quantity}
+                        onChange={(event) => updateLine(line.id, { quantity: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                      />
+                    </div>
+                    <div className="flex items-end justify-between rounded-xl bg-slate-950/50 px-3 py-2">
+                      <div>
+                        <p className="text-xs text-slate-400">Precio unitario</p>
+                        <p className="mt-1 font-medium text-white">{formatCurrency(draft.unitPrice)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Importe del renglón</p>
+                        <p className="mt-1 font-semibold text-emerald-200">{formatCurrency(draft.total)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {draft.product?.variants?.length && !line.variantId ? (
+                    <p className="mt-3 text-xs text-amber-200">Elige el precio que realmente se cobró en este renglón.</p>
+                  ) : null}
                 </div>
+              )
+            })}
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setForm((current) => ({ ...current, lines: [...current.lines, createSaleLine()] }))}
+              disabled={!form.employeeId || availableEmployeeStock.length === 0}
+            >
+              <Plus className="h-4 w-4" />
+              Agregar producto / otro precio
+            </Button>
+
+            {selectedEmployee && availableEmployeeStock.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
+                {selectedEmployee.name} todavía no tiene inventario asignado. El administrador debe asignarlo antes de registrar ventas.
               </div>
             ) : null}
-            <div className="md:col-span-2 grid gap-3 sm:grid-cols-3">
+            {stockError ? (
+              <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                Cantidad mayor que el stock disponible para uno de los productos. Revisa los renglones repetidos.
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-slate-300"><Calculator className="h-4 w-4 text-sky-300" /><span className="text-sm">Precio unitario</span></div>
-                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(unitPrice)}</p>
-                {pricing.variantName ? <p className="mt-1 text-xs text-slate-400">{pricing.variantName}</p> : null}
+                <div className="flex items-center gap-2 text-slate-300"><Calculator className="h-4 w-4 text-sky-300" /><span className="text-sm">Unidades</span></div>
+                <p className="mt-3 text-2xl font-semibold text-white">{totalUnits}</p>
               </div>
               <div className="rounded-2xl border-2 border-emerald-400/40 bg-emerald-400/10 p-4">
-                <div className="flex items-center gap-2 text-emerald-100"><Receipt className="h-4 w-4 text-emerald-300" /><span className="text-sm font-semibold">Monto total</span></div>
-                <p className="mt-3 text-3xl font-bold text-white">{formatCurrency(subtotal)}</p>
-                <p className="mt-1 text-xs text-emerald-200/80">{form.quantity} × {formatCurrency(unitPrice)}</p>
+                <div className="flex items-center gap-2 text-emerald-100"><Receipt className="h-4 w-4 text-emerald-300" /><span className="text-sm font-semibold">Total en efectivo</span></div>
+                <p className="mt-3 text-3xl font-bold text-white">{formatCurrency(saleTotal)}</p>
               </div>
               <div className="rounded-2xl bg-slate-950/70 p-4">
                 <div className="flex items-center gap-2 text-slate-300"><CreditCard className="h-4 w-4 text-amber-300" /><span className="text-sm">Ganancia</span></div>
-                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(profit)}</p>
+                <p className="mt-3 text-2xl font-semibold text-white">{formatCurrency(totalProfit)}</p>
               </div>
             </div>
-            <div className="md:col-span-2 flex justify-end">
-              <Button type="submit" disabled={!selectedProduct || !selectedEmployeeStock}>Guardar venta y rebajar corte</Button>
+
+            <div className="flex justify-end">
+              <Button type="submit" disabled={!selectedEmployee || hasInvalidLine || Boolean(stockError)}>
+                Guardar venta y rebajar stock
+              </Button>
             </div>
           </form>
         </SectionCard>
 
-        <SectionCard title="Ventas recientes" description="Historial real de ventas registradas en el sistema.">
-          {sales.length === 0 ? (
+        <SectionCard title="Ventas recientes" description="Cada venta con varios precios aparece agrupada y suma sus importes para los cortes.">
+          {saleGroups.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-300">
               No hay ventas registradas todavía. Cuando registren la primera, aparecerá aquí.
             </div>
           ) : (
             <div className="space-y-3">
-              {sales.map((sale) => (
-                <div key={sale.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-medium text-white">{sale.productName}{sale.variantName ? ` · ${sale.variantName}` : ''}</p>
-                      <p className="mt-1 text-sm text-slate-400">{sale.employeeName} · {sale.paymentMethod}</p>
+              {saleGroups.map((group) => {
+                const firstSale = group[0]
+                const groupTotal = group.reduce((sum, sale) => sum + sale.total, 0)
+                const groupQuantity = group.reduce((sum, sale) => sum + sale.quantity, 0)
+                return (
+                  <div key={firstSale.saleGroupId ?? firstSale.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-medium text-white">{firstSale.employeeName} · Venta en efectivo</p>
+                        <p className="mt-1 text-sm text-slate-400">{groupQuantity} unidades · {group.length} renglón(es)</p>
+                      </div>
+                      <StatusBadge label="Completada" tone="success" />
                     </div>
-                    <StatusBadge label="Completada" tone="success" />
+                    <div className="mt-4 space-y-2 border-t border-white/5 pt-3">
+                      {group.map((sale) => (
+                        <div key={sale.id} className="flex items-start justify-between gap-3 text-sm">
+                          <span className="text-slate-300">
+                            {sale.quantity} × {sale.productName}{sale.variantName ? ` · ${sale.variantName}` : ''}
+                            <span className="block text-xs text-slate-500">{formatCurrency(sale.unitPrice)} c/u</span>
+                          </span>
+                          <span className="font-medium text-white">{formatCurrency(sale.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3 text-sm">
+                      <span className="text-slate-400">Total</span>
+                      <span className="text-lg font-semibold text-emerald-200">{formatCurrency(groupTotal)}</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">{formatDateTime(firstSale.createdAt)}</p>
                   </div>
-                  <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-300">
-                    <span>{sale.quantity} unidades</span>
-                    <span className="font-medium text-white">{formatCurrency(sale.total)}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">{formatDateTime(sale.createdAt)}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </SectionCard>
