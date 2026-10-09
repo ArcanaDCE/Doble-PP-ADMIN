@@ -12,6 +12,7 @@ import { InventoryPage } from '../../pages/inventory-page.tsx'
 import { LoginPage } from '../../pages/login-page.tsx'
 import { NotFoundPage } from '../../pages/not-found-page.tsx'
 import { MySpacePage } from '../../pages/my-space-page.tsx'
+import { MyEarningsPage } from '../../pages/my-earnings-page.tsx'
 import { PaymentsPage } from '../../pages/payments-page.tsx'
 import { ProductsPage } from '../../pages/products-page.tsx'
 import { CutsPage } from '../../pages/cuts-page.tsx'
@@ -31,6 +32,10 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminShell />}>
           <Route path="/my-space" element={<MySpacePage />} />
+
+          <Route element={<RoleRoute allowedRoles={['seller']} />}>
+            <Route path="/my-earnings" element={<MyEarningsPage />} />
+          </Route>
 
           <Route element={<RoleRoute allowedRoles={['administrator', 'supervisor']} />}>
             <Route path="/dashboard" element={<DashboardPage />} />

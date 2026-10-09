@@ -19,9 +19,13 @@ function isActivePath(currentPath: string, itemPath: string) {
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
 }
 
-function canSeeItem(itemAudience: 'all' | 'admin' | 'manager' | 'operator', role: string) {
+function canSeeItem(itemAudience: 'all' | 'admin' | 'manager' | 'operator' | 'seller', role: string) {
   if (itemAudience === 'all') {
     return true
+  }
+
+  if (itemAudience === 'seller') {
+    return role === 'seller'
   }
 
   if (itemAudience === 'admin') {

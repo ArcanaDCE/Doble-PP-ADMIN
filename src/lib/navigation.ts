@@ -10,11 +10,12 @@ import {
   Settings,
   ShieldUser,
   ShoppingBag,
+  Sparkles,
   Users,
   UserRound,
 } from 'lucide-react'
 
-export type NavAudience = 'all' | 'admin' | 'manager' | 'operator'
+export type NavAudience = 'all' | 'admin' | 'manager' | 'operator' | 'seller'
 
 export const navigationItems = [
   {
@@ -31,6 +32,14 @@ export const navigationItems = [
     description: 'Stock, cortes y saldos personales',
     icon: UserRound,
     audience: 'all' as const,
+    section: 'general' as const,
+  },
+  {
+    path: '/my-earnings',
+    label: 'Mis ganancias',
+    description: 'Comisión y progreso de tus X',
+    icon: Sparkles,
+    audience: 'seller' as const,
     section: 'general' as const,
   },
   {
@@ -126,6 +135,7 @@ export const navigationItems = [
 export const routeTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/my-space': 'Mi espacio',
+  '/my-earnings': 'Mis ganancias',
   '/admin': 'Centro admin',
   '/employees': 'Empleados',
   '/products': 'Productos',

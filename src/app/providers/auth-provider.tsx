@@ -162,7 +162,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const isConfigured = Boolean((configuredEmail && configuredPassword) || hasLocalCredentials || hasRemoteAppDataConfig())
   const configError = isConfigured
     ? null
-    : 'Faltan credenciales. Configura el administrador en Netlify o crea usuarios locales con contraseña.'
+    : 'Este sitio no tiene acceso configurado. En Netlify, configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY para las cuentas compartidas, o VITE_APP_ADMIN_EMAIL y VITE_APP_ADMIN_PASSWORD para el administrador principal; después vuelve a desplegar.'
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -174,12 +174,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       role: session?.user.role ?? 'administrator',
       async signIn(email, password) {
         try {
-          if (!isConfigured) {
-            return { error: configError }
-          }
-
           const normalizedEmail = email.trim().toLowerCase()
-          if (normalizedEmail === configuredEmail && password === configuredPassword) {
+          if (
+            configuredEmail &&
+            configuredPassword &&
+            normalizedEmail === configuredEmail &&
+            password === configuredPassword
+          ) {
             const nextSession = createSession(normalizedEmail, configuredName)
             persistSession(nextSession)
             setSession(nextSession)
@@ -195,6 +196,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
           )
 
           if (!matchedUser) {
+            if (!isConfigured) {
+              return { error: configError }
+            }
+
             return { error: 'Correo o contraseña incorrectos.' }
           }
 

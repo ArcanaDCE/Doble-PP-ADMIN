@@ -17,7 +17,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { settings } = useAppData()
-  const { configError, isConfigured, signIn } = useAuth()
+  const { configError, signIn } = useAuth()
   const quickAccessEmail = (import.meta.env.VITE_APP_ADMIN_EMAIL || 'admin@doblepp.com').trim().toLowerCase()
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState(quickAccessEmail)
@@ -136,7 +136,7 @@ export function LoginPage() {
                   className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-slate-500"
                   placeholder="admin@doblepp.com"
                   autoComplete="email"
-                  disabled={!isConfigured || isSubmitting}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -150,7 +150,7 @@ export function LoginPage() {
                     className="h-12 w-full bg-transparent px-4 text-sm text-white outline-none placeholder:text-slate-500"
                     placeholder="••••••••"
                     autoComplete="current-password"
-                    disabled={!isConfigured || isSubmitting}
+                    disabled={isSubmitting}
                   />
                   <button
                     type="button"
@@ -163,14 +163,14 @@ export function LoginPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" size="lg" disabled={!isConfigured || isSubmitting}>
+              <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
                 <LockKeyhole className="h-4 w-4" />
                 {isSubmitting ? 'Validando acceso...' : 'Iniciar sesión'}
               </Button>
             </form>
 
             <div className="mt-5 rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-7 text-amber-50/90">
-              Publicación simple: solo necesitas definir correo y contraseña del administrador en Netlify para que el sistema quede listo.
+              Si cambias variables de entorno en Netlify, debes volver a desplegar el sitio para que se apliquen.
             </div>
 
             <div className="mt-6 text-sm text-slate-400">

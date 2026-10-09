@@ -102,11 +102,11 @@ VITE_APP_ADMIN_PASSWORD=DoblePP2025!
    - Build command: `npm run build`
    - Publish directory: `dist`
 4. En Netlify usa Node 22 y permite instalar devDependencies (el [netlify.toml](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/netlify.toml>) ya lo fuerza).
-5. Agrega estas variables de entorno en Netlify:
-   - `VITE_APP_ADMIN_EMAIL=admin@doblepp.com`
-   - `VITE_APP_ADMIN_PASSWORD=DoblePP2025!`
-   - `VITE_APP_ADMIN_NAME=Administrador principal`
-6. Despliega.
+5. Configura las variables de entorno en Netlify:
+   - `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` para leer las cuentas compartidas y los datos de la compañía.
+   - `VITE_APP_ADMIN_EMAIL` y `VITE_APP_ADMIN_PASSWORD` para habilitar el acceso del administrador principal.
+   - `VITE_APP_ADMIN_NAME` (opcional) para definir el nombre mostrado para ese administrador.
+6. Guarda los cambios y vuelve a desplegar. Vite incorpora estas variables durante la compilación, así que no basta con guardarlas después de un deploy existente.
 
 El archivo [netlify.toml](<C:/Users/maest/OneDrive/Escritorio/Doble PP Admin/netlify.toml>) ya incluye el redirect SPA para que React Router funcione al recargar rutas internas.
 
