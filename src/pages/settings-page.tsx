@@ -10,7 +10,7 @@ export function SettingsPage() {
   const { settings: storedSettings, updateSettings, addActivity, resetOperationalData } = useAppData()
   const [settings, setSettings] = useState(storedSettings)
   const [saveMessage, setSaveMessage] = useState('')
-  const { notifySuccess } = useFeedback()
+  const { notifySuccess, notifyError } = useFeedback()
 
   useEffect(() => {
     setSettings(storedSettings)
@@ -34,7 +34,7 @@ export function SettingsPage() {
     notifySuccess('Configuración guardada', 'Los ajustes quedaron listos para la operación diaria.')
   }
 
-  function handleResetOperationalData() {
+  async function handleResetOperationalData() {
     const confirmed = window.confirm(
       'Esto reiniciará ventas, cortes, pagos, deudas, ahorros, gastos y actividad reciente, manteniendo empleados, productos y accesos. ¿Deseas continuar?',
     )
@@ -43,7 +43,12 @@ export function SettingsPage() {
       return
     }
 
-    resetOperationalData()
+    const errorMessage = await resetOperationalData()
+    if (errorMessage) {
+      setSaveMessage(errorMessage)
+      notifyError('No se pudo reiniciar la operación', errorMessage)
+      return
+    }
     setSaveMessage('La operación quedó reiniciada y los indicadores volvieron a cero.')
     window.setTimeout(() => setSaveMessage(''), 2600)
     notifySuccess('Operación reiniciada', 'Las ganancias y movimientos de prueba se limpiaron sin borrar empleados ni accesos.')

@@ -30,6 +30,7 @@ export function InventoryPage() {
   const { notifySuccess, notifyError } = useFeedback()
   const [form, setForm] = useState(defaultForm)
   const [transferForm, setTransferForm] = useState(defaultTransferForm)
+  const [isSaving, setIsSaving] = useState(false)
 
   const lowStockCount = useMemo(() => products.filter((product) => product.stock <= product.minimumStock).length, [products])
   const assignedUnits = useMemo(() => employeeStocks.reduce((sum, item) => sum + item.quantity, 0), [employeeStocks])
@@ -42,7 +43,7 @@ export function InventoryPage() {
     [employees, employeeStocks],
   )
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.productId || Number(form.quantity) <= 0) {
       notifyError('Movimiento inválido', 'Selecciona un producto y una cantidad mayor a cero.')
@@ -55,7 +56,8 @@ export function InventoryPage() {
       return
     }
 
-    addInventoryMovement({
+    setIsSaving(true)
+    const movementError = await addInventoryMovement({
       productId: product.id,
       productName: product.name,
       type: form.type as 'Entrada' | 'Salida' | 'Ajuste' | 'Devolución',
@@ -63,6 +65,11 @@ export function InventoryPage() {
       reason: form.reason || 'Sin motivo indicado',
       user: form.user,
     })
+    setIsSaving(false)
+    if (movementError) {
+      notifyError('No se pudo guardar el movimiento', movementError)
+      return
+    }
     addActivity({
       user: form.user,
       action: `Se registró una ${form.type.toLowerCase()}`,
@@ -74,7 +81,7 @@ export function InventoryPage() {
     notifySuccess('Movimiento guardado', `${form.type} aplicada a ${product.name} correctamente.`)
   }
 
-  function handleTransferSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleTransferSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!transferForm.employeeId || !transferForm.productId || Number(transferForm.quantity) <= 0) {
@@ -90,13 +97,15 @@ export function InventoryPage() {
       return
     }
 
-    const errorMessage = assignEmployeeStock({
+    setIsSaving(true)
+    const errorMessage = await assignEmployeeStock({
       employeeId: employee.id,
       productId: product.id,
       quantity: Number(transferForm.quantity),
       notes: transferForm.notes.trim(),
       user: 'Administrador',
     })
+    setIsSaving(false)
 
     if (errorMessage) {
       notifyError('No se pudo surtir', errorMessage)
@@ -171,7 +180,7 @@ export function InventoryPage() {
               <input value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none" placeholder="Compra, venta, ajuste o devolución" />
             </div>
             <div className="md:col-span-2 flex justify-end">
-              <Button type="submit">Guardar movimiento</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Guardar movimiento'}</Button>
             </div>
           </form>
         </SectionCard>
@@ -254,7 +263,7 @@ export function InventoryPage() {
               />
             </div>
             <div className="md:col-span-2 flex justify-end">
-              <Button type="submit">Asignar mercancía</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Asignar mercancía'}</Button>
             </div>
           </form>
         </SectionCard>

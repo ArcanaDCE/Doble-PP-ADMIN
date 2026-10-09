@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 import {
   createId,
   formatCurrency,
@@ -23,7 +23,12 @@ import {
   type Vehicle,
   type VehicleMovement,
 } from '../../lib/app-data.ts'
-import { fetchRemoteAppData, hasRemoteAppDataConfig, saveRemoteAppData } from '../../lib/remote-app-data.ts'
+import {
+  applyRemoteInventoryOperation,
+  fetchRemoteAppData,
+  hasRemoteAppDataConfig,
+  saveRemoteAppData,
+} from '../../lib/remote-app-data.ts'
 
 interface AppDataContextValue {
   data: AppData
@@ -48,21 +53,21 @@ interface AppDataContextValue {
       quantity: number
       notes?: string
     }>
-  }) => { employee: Employee | null; error: string | null }
+  }) => Promise<{ employee: Employee | null; error: string | null }>
   updateEmployee: (employeeId: string, updates: Partial<Employee>) => void
-  deleteEmployee: (employeeId: string) => void
+  deleteEmployee: (employeeId: string) => Promise<string | null>
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'status'> & { status?: Product['status'] }) => void
   updateProduct: (productId: string, updates: Partial<Product>) => void
-  deleteProduct: (productId: string) => void
+  deleteProduct: (productId: string) => Promise<string | null>
   addVehicle: (vehicle: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }) => void
   updateVehicle: (vehicleId: string, updates: Partial<Vehicle>) => void
   deleteVehicle: (vehicleId: string) => void
   addVehicleMovement: (movement: Omit<VehicleMovement, 'id' | 'createdAt'> & { createdAt?: string }) => void
-  addInventoryMovement: (movement: { productId: string; productName: string; type: 'Entrada' | 'Salida' | 'Ajuste' | 'Devolución'; quantity: number; reason: string; user: string }) => void
-  assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => string | null
-  adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => string | null
-  addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => string | null
-  addSales: (sales: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) => string | null
+  addInventoryMovement: (movement: { productId: string; productName: string; type: 'Entrada' | 'Salida' | 'Ajuste' | 'Devolución'; quantity: number; reason: string; user: string }) => Promise<string | null>
+  assignEmployeeStock: (assignment: { employeeId: string; productId: string; quantity: number; notes?: string; user: string }) => Promise<string | null>
+  adjustEmployeeStock: (adjustment: { employeeId: string; productId: string; quantity: number; direction: 'add' | 'remove'; notes?: string; user: string }) => Promise<string | null>
+  addSale: (sale: Omit<Sale, 'id' | 'createdAt'>) => Promise<string | null>
+  addSales: (sales: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) => Promise<string | null>
   closeCut: (cut: Omit<EmployeeCut, 'id' | 'createdAt'> & { createdAt?: string }) => string | null
   addExpense: (expense: Omit<Expense, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'approvedBy'> & { status?: ExpenseStatus }) => string | null
   updateExpenseStatus: (expenseId: string, status: ExpenseStatus, approvedBy: string) => string | null
@@ -72,7 +77,7 @@ interface AppDataContextValue {
   updateSettings: (updates: Partial<AppSettings>) => void
   addUser: (user: Omit<import('../../lib/app-data.ts').AppUser, 'id' | 'lastLogin'> & { lastLogin?: string }) => void
   updateUser: (userId: string, updates: Partial<import('../../lib/app-data.ts').AppUser>) => void
-  resetOperationalData: () => void
+  resetOperationalData: () => Promise<string | null>
   resetAll: () => void
   totals: {
     activeEmployees: number
@@ -103,6 +108,71 @@ export function AppDataProvider({ children }: PropsWithChildren) {
   // Tracks whether a local edit happened while the remote fetch was still in flight, so we don't
   // let a slow hydration silently overwrite something the admin just created (e.g. a new employee).
   const hasLocalEditSinceMount = useRef(false)
+
+  const applyInventoryOperation = useCallback(async (
+    operation: 'record_sale' | 'assign_employee_stock' | 'adjust_employee_stock' | 'add_inventory_movement' | 'delete_product' | 'delete_employee' | 'add_employee' | 'reset_operational_data',
+    input: Record<string, unknown>,
+  ) => {
+    if (!isRemoteHydrated) {
+      return 'Espera a que termine la sincronización antes de registrar un movimiento.'
+    }
+
+    const result = await applyRemoteInventoryOperation(operation, input)
+    if (result.error || !result.data) {
+      return result.error ?? 'Supabase no devolvió el estado actualizado.'
+    }
+
+    setData((current) => {
+      const remoteEmployeeById = new Map(result.data?.employees.map((employee) => [employee.id, employee]) ?? [])
+      const remoteProductById = new Map(result.data?.products.map((product) => [product.id, product]) ?? [])
+      const next = {
+        ...current,
+        sales: result.data?.sales ?? current.sales,
+        employeeStocks: result.data?.employeeStocks ?? current.employeeStocks,
+        employeeStockMovements: result.data?.employeeStockMovements ?? current.employeeStockMovements,
+        inventoryMovements: result.data?.inventoryMovements ?? current.inventoryMovements,
+        products: current.products
+          .filter((product) => operation !== 'delete_product' || product.id !== input.productId)
+          .map((product) => {
+            const remoteProduct = remoteProductById.get(product.id)
+            return remoteProduct
+              ? { ...product, stock: remoteProduct.stock, status: remoteProduct.status }
+              : product
+          }),
+        employees: operation === 'add_employee'
+          ? [
+              ...(result.data?.employees.filter((employee) => employee.id === input.employeeId) ?? []),
+              ...current.employees,
+            ]
+          : current.employees
+            .filter((employee) => operation !== 'delete_employee' || employee.id !== input.employeeId)
+            .map((employee) => {
+          const remoteEmployee = remoteEmployeeById.get(employee.id)
+          if (!remoteEmployee) {
+            return employee
+          }
+          return operation === 'reset_operational_data'
+            ? { ...employee, sales: remoteEmployee.sales, debt: remoteEmployee.debt, savings: remoteEmployee.savings, payments: remoteEmployee.payments }
+            : { ...employee, sales: remoteEmployee.sales }
+          }),
+      }
+
+      if (operation === 'reset_operational_data') {
+        return {
+          ...next,
+          cuts: result.data?.cuts ?? current.cuts,
+          expenses: result.data?.expenses ?? current.expenses,
+          payments: result.data?.payments ?? current.payments,
+          financeMovements: result.data?.financeMovements ?? current.financeMovements,
+          activity: result.data?.activity ?? current.activity,
+        }
+      }
+
+      return next
+    })
+
+    return null
+  }, [isRemoteHydrated])
 
   useEffect(() => {
     if (!remoteEnabled) {
@@ -233,7 +303,17 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     }
   }, [data])
 
-  function addSales(saleLines: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) {
+  const addSales = useCallback(async (saleLines: Array<Omit<Sale, 'id' | 'createdAt' | 'saleGroupId'>>) => {
+    if (remoteEnabled) {
+      if (saleLines.length === 0) {
+        return 'Agrega al menos un renglón a la venta.'
+      }
+      return applyInventoryOperation('record_sale', {
+        employeeId: saleLines[0].employeeId,
+        lines: saleLines,
+      })
+    }
+
     let errorMessage: string | null = null
 
     setData((current) => {
@@ -351,7 +431,7 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     })
 
     return errorMessage
-  }
+  }, [applyInventoryOperation, remoteEnabled])
 
   const value = useMemo<AppDataContextValue>(() => ({
     data,
@@ -371,10 +451,31 @@ export function AppDataProvider({ children }: PropsWithChildren) {
     users: data.users,
     activity: data.activity,
     totals,
-    addEmployee: (employee) => {
+    addEmployee: async (employee) => {
       let createdEmployee: Employee | null = null
       let errorMessage: string | null = null
       const employeeId = createId('employee')
+      const nextEmployee: Employee = {
+        id: employeeId,
+        name: employee.name,
+        position: employee.position,
+        status: employee.status,
+        hiredAt: employee.hiredAt,
+        notes: employee.notes,
+        sales: 0,
+        debt: 0,
+        savings: 0,
+        payments: 0,
+      }
+
+      if (remoteEnabled) {
+        errorMessage = await applyInventoryOperation('add_employee', {
+          employee: nextEmployee,
+          employeeId,
+          initialStock: employee.initialStock ?? [],
+        })
+        return { employee: errorMessage ? null : nextEmployee, error: errorMessage }
+      }
 
       setData((current) => {
         const initialStock = employee.initialStock ?? []
@@ -415,19 +516,6 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         }
 
         const now = new Date().toISOString()
-        const nextEmployee: Employee = {
-          id: employeeId,
-          name: employee.name,
-          position: employee.position,
-          status: employee.status,
-          hiredAt: employee.hiredAt,
-          notes: employee.notes,
-          sales: 0,
-          debt: 0,
-          savings: 0,
-          payments: 0,
-        }
-
         createdEmployee = nextEmployee
 
         if (normalizedAssignments.size === 0) {
@@ -506,7 +594,13 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         ),
       }))
     },
-    deleteEmployee: (employeeId) => {
+    deleteEmployee: async (employeeId) => {
+      if (remoteEnabled) {
+        const errorMessage = await applyInventoryOperation('delete_employee', { employeeId })
+        if (errorMessage) {
+          return errorMessage
+        }
+      }
       setData((current) => ({
         ...current,
         employees: current.employees.filter((employee) => employee.id !== employeeId),
@@ -516,6 +610,7 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         // otherwise their credentials remain active after the employee record is gone.
         users: current.users.filter((user) => user.employeeId !== employeeId),
       }))
+      return null
     },
     addProduct: (product) => {
       setData((current) => ({
@@ -539,13 +634,20 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         ),
       }))
     },
-    deleteProduct: (productId) => {
+    deleteProduct: async (productId) => {
+      if (remoteEnabled) {
+        const errorMessage = await applyInventoryOperation('delete_product', { productId })
+        if (errorMessage) {
+          return errorMessage
+        }
+      }
       setData((current) => ({
         ...current,
         products: current.products.filter((product) => product.id !== productId),
         employeeStocks: current.employeeStocks.filter((row) => row.productId !== productId),
         employeeStockMovements: current.employeeStockMovements.filter((row) => row.productId !== productId),
       }))
+      return null
     },
     addVehicle: (vehicle) => {
       setData((current) => ({
@@ -592,7 +694,11 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         ],
       }))
     },
-    addInventoryMovement: (movement) => {
+    addInventoryMovement: async (movement) => {
+      if (remoteEnabled) {
+        return applyInventoryOperation('add_inventory_movement', movement)
+      }
+
       setData((current) => {
         const product = current.products.find((item) => item.id === movement.productId)
         if (!product) {
@@ -624,8 +730,13 @@ export function AppDataProvider({ children }: PropsWithChildren) {
           inventoryMovements: [nextMovement, ...current.inventoryMovements],
         } satisfies AppData
       })
+      return null
     },
-    assignEmployeeStock: (assignment) => {
+    assignEmployeeStock: async (assignment) => {
+      if (remoteEnabled) {
+        return applyInventoryOperation('assign_employee_stock', assignment)
+      }
+
       let errorMessage: string | null = null
 
       setData((current) => {
@@ -717,7 +828,11 @@ export function AppDataProvider({ children }: PropsWithChildren) {
 
       return errorMessage
     },
-    adjustEmployeeStock: (adjustment) => {
+    adjustEmployeeStock: async (adjustment) => {
+      if (remoteEnabled) {
+        return applyInventoryOperation('adjust_employee_stock', adjustment)
+      }
+
       let errorMessage: string | null = null
 
       setData((current) => {
@@ -1076,7 +1191,11 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         ),
       }))
     },
-    resetOperationalData: () => {
+    resetOperationalData: async () => {
+      if (remoteEnabled) {
+        return applyInventoryOperation('reset_operational_data', {})
+      }
+
       setData((current) => ({
         ...current,
         employees: current.employees.map((employee) => ({
@@ -1102,11 +1221,12 @@ export function AppDataProvider({ children }: PropsWithChildren) {
         financeMovements: [],
         activity: [],
       }))
+      return null
     },
     resetAll: () => {
       setData(getDefaultAppData())
     },
-  }), [data, totals])
+  }), [addSales, applyInventoryOperation, data, remoteEnabled, totals])
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
 }

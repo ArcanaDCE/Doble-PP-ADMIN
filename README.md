@@ -61,6 +61,14 @@ on conflict (id) do nothing;
 
 Sin este paso, la app funciona por navegador (localStorage) y los cambios no se comparten entre dispositivos.
 
+### Operaciones de venta e inventario sin sobreventa
+
+Antes de desplegar el cliente actualizado, ejecuta el SQL de [20261009000000_atomic_inventory_operations.sql](./supabase/migrations/20261009000000_atomic_inventory_operations.sql) desde Supabase SQL Editor. La migración conserva los datos existentes y crea funciones transaccionales que serializan las ventas, surtidos, retiros y movimientos de bodega sobre el estado compartido. El servidor vuelve a validar el stock disponible y rechaza una operación que ya no tenga existencias.
+
+Aplica la migración primero y confirma que termine correctamente; después publica el cliente. El cliente nuevo depende de estas funciones y mostrará un error explícito si todavía no existen. Mantén una copia de respaldo del estado `app_state` antes de ejecutarla.
+
+Esta mejora protege los movimientos de inventario soportados por la aplicación contra carreras concurrentes. No convierte el inicio de sesión local en autenticación de servidor ni cambia las políticas de acceso anónimo ya configuradas en Supabase.
+
 ## Registrar ventas con descuentos manuales
 
 En **Ventas**, cada renglón representa un producto, una cantidad y el precio unitario realmente cobrado. El precio se propone desde el catálogo (o la variedad elegida), pero el vendedor puede modificarlo para registrar un descuento.

@@ -40,6 +40,7 @@ export function SalesPage() {
   const { role, user } = useAuth()
   const { notifySuccess, notifyError } = useFeedback()
   const [form, setForm] = useState(defaultForm)
+  const [isSaving, setIsSaving] = useState(false)
 
   const sellerEmployeeId = role === 'seller' ? user?.employeeId : undefined
   const employeeOptions = useMemo(
@@ -133,7 +134,7 @@ export function SalesPage() {
     }))
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.employeeId || !selectedEmployee || hasInvalidLine) {
       notifyError('Venta incompleta', 'Selecciona un vendedor, producto, variedad y cantidad válida en cada renglón.')
@@ -164,10 +165,19 @@ export function SalesPage() {
       }]
     })
 
-    const responseError = addSales(saleLines)
-    if (responseError) {
-      notifyError('No se pudo registrar la venta', responseError)
+    setIsSaving(true)
+    try {
+      const responseError = await addSales(saleLines)
+      if (responseError) {
+        notifyError('No se pudo registrar la venta', responseError)
+        return
+      }
+    } catch (error) {
+      console.error(error)
+      notifyError('No se pudo registrar la venta', 'No se confirmó la operación. Actualiza la página y revisa el historial antes de reintentar.')
       return
+    } finally {
+      setIsSaving(false)
     }
 
     const lineSummary = lineDrafts
@@ -354,8 +364,8 @@ export function SalesPage() {
             </div>
 
             <div className="flex justify-end">
-              <Button type="submit" disabled={!selectedEmployee || hasInvalidLine || Boolean(stockError)}>
-                Guardar venta y rebajar stock
+              <Button type="submit" disabled={isSaving || !selectedEmployee || hasInvalidLine || Boolean(stockError)}>
+                {isSaving ? 'Registrando venta...' : 'Guardar venta y rebajar stock'}
               </Button>
             </div>
           </form>

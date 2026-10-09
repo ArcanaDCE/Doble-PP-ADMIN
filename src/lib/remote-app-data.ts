@@ -112,7 +112,7 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
   try {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
-    const endpoint = `${url}/rest/v1/app_state?on_conflict=id`
+    const endpoint = `${url}/rest/v1/rpc/save_app_data`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -120,14 +120,8 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
         apikey: anonKey,
         Authorization: `Bearer ${anonKey}`,
         'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
-      body: JSON.stringify([
-        {
-          id: REMOTE_ROW_ID,
-          payload: data,
-        },
-      ]),
+      body: JSON.stringify({ p_payload: data }),
       signal: controller.signal,
     })
 
@@ -135,7 +129,7 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
 
     if (!response.ok) {
       const details = await response.text()
-      return `No se pudo guardar el estado remoto (${response.status}). ${details.slice(0, 140)}`
+      return `No se pudo guardar el estado remoto (${response.status}). ${details.slice(0, 240)}`
     }
 
     return null
@@ -145,5 +139,61 @@ export async function saveRemoteAppData(data: AppData): Promise<string | null> {
     }
 
     return `No se pudo guardar en Supabase. ${error instanceof Error ? error.message : ''}`.trim()
+  }
+}
+
+export async function applyRemoteInventoryOperation(
+  operation:
+    | 'record_sale'
+    | 'assign_employee_stock'
+    | 'adjust_employee_stock'
+    | 'add_inventory_movement'
+    | 'delete_product'
+    | 'delete_employee'
+    | 'add_employee'
+    | 'reset_operational_data',
+  input: Record<string, unknown>,
+): Promise<{ data: AppData | null; error: string | null }> {
+  const { url, anonKey } = getSupabaseConfig()
+
+  if (!url || !anonKey) {
+    return { data: null, error: 'No está configurada la conexión remota con Supabase.' }
+  }
+
+  try {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS)
+    const endpoint = `${url}/rest/v1/rpc/apply_inventory_operation`
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_operation: operation, p_input: input }),
+      signal: controller.signal,
+    })
+
+    window.clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const details = await response.text()
+      return {
+        data: null,
+        error: `No se pudo completar la operación remota (${response.status}). ${details.slice(0, 240)}`,
+      }
+    }
+
+    const payload = (await response.json()) as Partial<AppData>
+    return { data: normalizeRemotePayload(payload), error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? 'La operación tardó demasiado y no se confirmó. Actualiza los datos antes de volver a intentarlo.'
+          : `No se pudo completar la operación remota. ${error instanceof Error ? error.message : ''}`.trim(),
+    }
   }
 }

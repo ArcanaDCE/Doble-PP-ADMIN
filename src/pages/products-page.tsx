@@ -302,8 +302,12 @@ export function ProductsPage() {
                     updateProduct(product.id, { status: product.stock <= product.minimumStock ? 'Activo' : 'Bajo stock' })
                     notifySuccess('Producto actualizado', `${product.name} quedó sincronizado con su stock actual.`)
                   }}>Actualizar</Button>
-                  <Button size="sm" variant="danger" onClick={() => {
-                    deleteProduct(product.id)
+                  <Button size="sm" variant="danger" onClick={async () => {
+                    const errorMessage = await deleteProduct(product.id)
+                    if (errorMessage) {
+                      notifyError('No se pudo eliminar el producto', errorMessage)
+                      return
+                    }
                     addActivity({ user: 'Administrador', action: 'Se eliminó un producto', module: 'Productos', record: product.name, createdAt: new Date().toISOString() })
                     notifySuccess('Producto eliminado', `${product.name} salió del catálogo.`)
                   }}>Eliminar</Button>

@@ -52,6 +52,7 @@ export function EmployeesPage() {
   const [accessManageId, setAccessManageId] = useState('')
   const [accessForm, setAccessForm] = useState({ role: 'seller' as 'administrator' | 'supervisor' | 'seller' | 'employee', email: '', password: '' })
   const [showAccessPassword, setShowAccessPassword] = useState(false)
+  const [isSavingEmployee, setIsSavingEmployee] = useState(false)
 
   function openEmployeeForm() {
     setForm(createDefaultForm())
@@ -92,7 +93,7 @@ export function EmployeesPage() {
 
   const initialStockTotalUnits = initialStockPreview.reduce((sum, item) => sum + item.quantity, 0)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.name.trim() || !form.position.trim()) {
       notifyError('Faltan datos del empleado', 'Completa nombre y puesto para guardar el registro.')
@@ -121,7 +122,8 @@ export function EmployeesPage() {
       selectedProducts.add(row.productId)
     }
 
-    const { employee, error } = addEmployee({
+    setIsSavingEmployee(true)
+    const { employee, error } = await addEmployee({
       name: form.name.trim(),
       position: form.position.trim(),
       status: form.status,
@@ -133,6 +135,7 @@ export function EmployeesPage() {
         notes: row.notes.trim(),
       })),
     })
+    setIsSavingEmployee(false)
 
     if (error || !employee) {
       notifyError('No se pudo guardar el empleado', error ?? 'Intenta nuevamente.')
@@ -186,7 +189,7 @@ export function EmployeesPage() {
     )
   }
 
-  function handleEmployeeStockSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleEmployeeStockSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!stockManagerEmployeeId || !stockForm.productId || Number(stockForm.quantity) <= 0) {
@@ -200,7 +203,7 @@ export function EmployeesPage() {
       return
     }
 
-    const responseError = adjustEmployeeStock({
+    const responseError = await adjustEmployeeStock({
       employeeId: stockManagerEmployeeId,
       productId: stockForm.productId,
       quantity: Number(stockForm.quantity),
@@ -493,7 +496,9 @@ export function EmployeesPage() {
             </div>
             <div className="md:col-span-2 flex justify-end gap-3">
               <Button type="button" variant="secondary" onClick={resetEmployeeForm}>Cancelar</Button>
-              <Button type="submit">Guardar empleado</Button>
+              <Button type="submit" disabled={isSavingEmployee}>
+                {isSavingEmployee ? 'Guardando empleado...' : 'Guardar empleado'}
+              </Button>
             </div>
           </form>
         </SectionCard>
@@ -621,8 +626,12 @@ export function EmployeesPage() {
                           }}>
                             {employee.status === 'Activo' ? 'Desactivar' : 'Reactivar'}
                           </Button>
-                          <Button size="sm" variant="danger" onClick={() => {
-                            deleteEmployee(employee.id)
+                          <Button size="sm" variant="danger" onClick={async () => {
+                            const errorMessage = await deleteEmployee(employee.id)
+                            if (errorMessage) {
+                              notifyError('No se pudo eliminar al empleado', errorMessage)
+                              return
+                            }
                             addActivity({
                               user: 'Administrador',
                               action: 'Se eliminó un empleado',

@@ -92,7 +92,7 @@ export function EmployeeProfilePage() {
     [employeeFinance, employeePayments, employeeSales, employeeStockHistory],
   )
 
-  function handleAssignStock(event: FormEvent<HTMLFormElement>) {
+  async function handleAssignStock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!assignmentForm.productId || Number(assignmentForm.quantity) <= 0) {
@@ -106,7 +106,7 @@ export function EmployeeProfilePage() {
       return
     }
 
-    const responseError = assignEmployeeStock({
+    const responseError = await assignEmployeeStock({
       employeeId: employee.id,
       productId: product.id,
       quantity: Number(assignmentForm.quantity),

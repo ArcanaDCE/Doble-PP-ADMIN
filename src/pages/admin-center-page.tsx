@@ -12,6 +12,7 @@ import { navigationItems } from '../lib/navigation.ts'
 export function AdminCenterPage() {
   const { totals, products, employees, vehicles, assignEmployeeStock, addInventoryMovement, addActivity } = useAppData()
   const { notifySuccess, notifyError } = useFeedback()
+  const [isSaving, setIsSaving] = useState(false)
   const [restockForm, setRestockForm] = useState({
     employeeId: '',
     productId: '',
@@ -29,7 +30,7 @@ export function AdminCenterPage() {
     [products],
   )
 
-  function handleRestockSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleRestockSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!restockForm.employeeId || !restockForm.productId || Number(restockForm.quantity) <= 0) {
@@ -44,13 +45,15 @@ export function AdminCenterPage() {
       return
     }
 
-    const errorMessage = assignEmployeeStock({
+    setIsSaving(true)
+    const errorMessage = await assignEmployeeStock({
       employeeId: employee.id,
       productId: product.id,
       quantity: Number(restockForm.quantity),
       notes: restockForm.notes.trim() || `Surtido desde centro admin para ${employee.name}`,
       user: 'Administrador',
     })
+    setIsSaving(false)
 
     if (errorMessage) {
       notifyError('No se pudo surtir', errorMessage)
@@ -69,7 +72,7 @@ export function AdminCenterPage() {
     notifySuccess('Surtido realizado', `${employee.name} recibió ${restockForm.quantity} unidad(es) de ${product.name}.`)
   }
 
-  function handleInventorySubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleInventorySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!inventoryForm.productId || Number(inventoryForm.quantity) <= 0) {
@@ -83,7 +86,8 @@ export function AdminCenterPage() {
       return
     }
 
-    addInventoryMovement({
+    setIsSaving(true)
+    const errorMessage = await addInventoryMovement({
       productId: product.id,
       productName: product.name,
       type: 'Entrada',
@@ -91,6 +95,11 @@ export function AdminCenterPage() {
       reason: inventoryForm.reason.trim() || 'Entrada rápida desde centro admin',
       user: 'Administrador',
     })
+    setIsSaving(false)
+    if (errorMessage) {
+      notifyError('No se pudo registrar el movimiento', errorMessage)
+      return
+    }
 
     addActivity({
       user: 'Administrador',
@@ -224,7 +233,7 @@ export function AdminCenterPage() {
               />
             </div>
             <div className="md:col-span-2 flex justify-end">
-              <Button type="submit">Asignar stock</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Asignar stock'}</Button>
             </div>
           </form>
         </SectionCard>
@@ -266,7 +275,7 @@ export function AdminCenterPage() {
               />
             </div>
             <div className="md:col-span-2 flex justify-end">
-              <Button type="submit" variant="secondary">Entrar a bodega</Button>
+              <Button type="submit" variant="secondary" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Entrar a bodega'}</Button>
             </div>
           </form>
         </SectionCard>
